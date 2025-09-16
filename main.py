@@ -1,3 +1,7 @@
+import os
+import threading
+from flask import Flask
+
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -7,6 +11,20 @@ app = Client(
     api_hash=os.environ["API_HASH"],
     bot_token=os.environ["BOT_TOKEN"]
 )
+
+# --- small healthcheck server ---
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    flask_app.run(host="0.0.0.0", port=port)
+
+threading.Thread(target=run_flask).start()
+# --- end of healthcheck server ---
 
 # Data stores
 user_sources = {}       # {user_id: chat_id}
