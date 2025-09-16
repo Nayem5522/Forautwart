@@ -4,6 +4,7 @@ from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from motor.motor_asyncio import AsyncIOMotorClient
+from pyrogram.enums import ChatType # Import ChatType for better comparison
 
 # ---------- Flask healthcheck server ----------
 flask_app = Flask(__name__)
@@ -21,6 +22,10 @@ threading.Thread(target=run_flask).start()
 
 # ---------- MongoDB Client ----------
 MONGO_DB_URL = os.environ.get("MONGO_DB_URL")
+if not MONGO_DB_URL:
+    print("Error: MONGO_DB_URL environment variable is not set.")
+    exit(1) # Exit if essential variable is missing
+
 db_client = AsyncIOMotorClient(MONGO_DB_URL)
 db = db_client.autoforward_db
 
@@ -36,7 +41,6 @@ app = Client(
 
 # In-memory store for states (to avoid frequent DB calls for temporary states)
 waiting_for_destiny = set()
-# waiting_for_source = set() # Not strictly needed as set_source immediately expects a forward
 
 # ---------- Helper Functions for DB Operations ----------
 async def get_user_data(user_id):
@@ -101,10 +105,15 @@ async def cb_handler(client, query):
             chat = await client.get_chat(chat_id)
             invite_link = chat.invite_link if chat.invite_link else "No invite link available."
             
+            # --- FIX FOR THE 'capitalize' ERROR ---
+            # chat.type is a ChatType enum, its value is the string representation
+            chat_type_str = chat.type.value.capitalize() 
+            # -------------------------------------
+            
             text = f"🎯 <b>Destination Details:</b>\n" \
                    f"• <b>Name:</b> {chat.title}\n" \
                    f"• <b>ID:</b> <code>{chat.id}</code>\n" \
-                   f"• <b>Type:</b> {chat.type.capitalize()}\n" \
+                   f"• <b>Type:</b> {chat_type_str}\n" \
                    f"• <b>Invite Link:</b> {invite_link}\n\n" \
                    f"<i>Are you sure you want to remove this destination?</i>"
             
@@ -114,7 +123,13 @@ async def cb_handler(client, query):
             ])
             await query.message.edit_text(text, reply_markup=buttons, parse_mode="HTML", disable_web_page_preview=True)
         except Exception as e:
-            await query.message.edit_text(f"⚠️ Error fetching chat info: {e}\nPerhaps the bot was removed from this chat?")
+            # Added more specific error messages for debugging
+            await query.message.edit_text(f"⚠️ Error fetching chat info for {chat_id}: {e}\n\n"
+                                          "This usually means:\n"
+                                          "1. The bot is not a member of this chat.\n"
+                                          "2. The bot is not an administrator in this chat (if it's a private group/channel).\n"
+                                          "3. The chat was deleted or its ID changed.\n\n"
+                                          "Please ensure the bot has the necessary permissions and is in the chat.")
     
     elif query.data == "show_dest_list":
         await show_destiny_list(client, query.message, edit_message=True)
@@ -151,18 +166,23 @@ async def catch_forwarded(client, message):
     chat = message.forward_from_chat
 
     try:
-        # Check if bot has access and is admin (optional, but good practice for destinations)
+        # Check bot's membership status. get_chat_member will raise an error if bot is not in chat.
         member = await client.get_chat_member(chat.id, client.me.id)
-        if member.status not in ["administrator", "creator"]:
-             # For private channels, even if not admin, get_chat might work but forwarding will fail.
-             # For public channels, if not admin, get_chat might work. Best to check for actual forwarding capability.
-             # Let's assume get_chat itself is enough to determine basic access for now.
-             pass 
-
+        # For a destination, bot usually needs to be admin to forward messages
+        # For source, just being a member is enough to read messages, but get_chat_member confirms membership.
+        
         chat_info = await client.get_chat(chat.id) # This confirms bot has access to fetch info
+                                                 # and serves as a check for private channels/groups where
+                                                 # bot must be a member.
 
         if user_id in waiting_for_destiny:
             # Destination mode
+            # Ensure bot is at least a member, if it's a private chat
+            if chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP] and member.status not in ["administrator", "creator", "member"]:
+                await message.reply_text("⚠️ Bot must be an administrator or at least a member in the destination channel/group.")
+                waiting_for_destiny.discard(user_id)
+                return
+
             user_data = await get_user_data(user_id)
             if chat.id not in user_data["destination_chats"]:
                 await add_destination(user_id, chat.id)
@@ -172,13 +192,24 @@ async def catch_forwarded(client, message):
             waiting_for_destiny.discard(user_id)
         else:
             # Source mode
+            # For a source, bot usually just needs to be a member to read messages.
+            # No specific admin check here for reading.
+            if chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP] and member.status not in ["administrator", "creator", "member"]:
+                 await message.reply_text("⚠️ Bot must be a member in the source channel/group.")
+                 return
+
             await update_user_data(user_id, "source_chat", chat.id)
             await message.reply_text(f"✅ Source channel set: {chat_info.title}")
 
     except Exception as e:
         if user_id in waiting_for_destiny:
             waiting_for_destiny.discard(user_id)
-        await message.reply_text(f"⚠️ Bot is not admin or cannot access that chat.\nError: {e}")
+        # More descriptive error for forwarded messages
+        await message.reply_text(f"⚠️ Error setting source/destination for {chat.title} (ID: <code>{chat.id}</code>). Error: {e}\n\n"
+                                 "Please ensure:\n"
+                                 "1. The bot is a member of the forwarded chat.\n"
+                                 "2. The bot is an administrator in the forwarded chat if it's a private group/channel (and sometimes required for public channels too for get_chat_member).\n"
+                                 "3. The forwarded message is from a valid channel or group.")
 
 # ---------- SHOW / DELETE (Updated) ----------
 async def show_destiny_list(client, message, edit_message=False):
@@ -198,9 +229,9 @@ async def show_destiny_list(client, message, edit_message=False):
         
         reply_markup = InlineKeyboardMarkup(buttons)
         if edit_message:
-            await message.edit_text(text, reply_markup=reply_markup)
+            await message.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
         else:
-            await message.reply_text(text, reply_markup=reply_markup)
+            await message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
     else:
         if edit_message:
             await message.edit_text("⚠️ No destinations set.")
@@ -219,9 +250,9 @@ async def show_source(client, message):
     if src:
         try:
             chat = await client.get_chat(src)
-            await message.reply_text(f"📢 Current source: {chat.title}")
-        except Exception:
-            await message.reply_text(f"⚠️ Current source ({src}) is inaccessible. Please /del_source and /set_source again.")
+            await message.reply_text(f"📢 Current source: {chat.title}", parse_mode="HTML")
+        except Exception as e:
+            await message.reply_text(f"⚠️ Current source ({src}) is inaccessible. Error: {e}\n\nPlease /del_source and /set_source again.", parse_mode="HTML")
     else:
         await message.reply_text("⚠️ No source set. Use /set_source to add one.")
 
@@ -233,9 +264,6 @@ async def del_source(client, message):
         await message.reply_text("✅ Source removed.")
     else:
         await message.reply_text("⚠️ No source to remove.")
-
-# Removed @app.on_message(filters.command("del_destiny"))
-# Removed @app.on_callback_query(filters.regex(r"del_(\-?\d+)")) - integrated into show_destiny_list logic
 
 # ---------- FORWARDER ----------
 @app.on_message(filters.channel)
