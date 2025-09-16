@@ -5,14 +5,7 @@ from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-app = Client(
-    "autoforward",
-    api_id=int(os.environ["API_ID"]),
-    api_hash=os.environ["API_HASH"],
-    bot_token=os.environ["BOT_TOKEN"]
-)
-
-# --- small healthcheck server ---
+# ---------- Flask healthcheck server ----------
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -24,12 +17,20 @@ def run_flask():
     flask_app.run(host="0.0.0.0", port=port)
 
 threading.Thread(target=run_flask).start()
-# --- end of healthcheck server ---
+# ---------- end Flask ----------
+
+# ---------- Pyrogram client ----------
+app = Client(
+    "autoforward",
+    api_id=int(os.environ["API_ID"]),
+    api_hash=os.environ["API_HASH"],
+    bot_token=os.environ["BOT_TOKEN"]
+)
 
 # Data stores
 user_sources = {}       # {user_id: chat_id}
 user_destinations = {}  # {user_id: [chat_ids]}
-
+waiting_for_destiny = set()
 
 # ---------- START ----------
 @app.on_message(filters.command("start") & filters.private)
@@ -42,7 +43,6 @@ async def start(client, message):
         "👋 Welcome!\n\nThis bot can automatically forward posts from one channel/group to another.",
         reply_markup=buttons
     )
-
 
 @app.on_callback_query()
 async def cb_handler(client, query):
@@ -60,7 +60,6 @@ async def cb_handler(client, query):
             "After setup, any post in source will be forwarded automatically to destinations."
         )
 
-
 # ---------- SET SOURCE ----------
 @app.on_message(filters.command("set_source") & filters.private)
 async def set_source(client, message):
@@ -69,36 +68,7 @@ async def set_source(client, message):
         "⚠️ Bot must be admin in that channel."
     )
 
-
-@app.on_message(filters.forwarded & filters.private)
-async def catch_forwarded(client, message):
-    user_id = message.from_user.id
-    if message.forward_from_chat:
-        chat = message.forward_from_chat
-        try:
-            member = await client.get_chat_member(chat.id, "me")
-            if member.status in ("administrator", "creator"):
-                # If user sent /set_destiny before, store accordingly
-                if user_id in waiting_for_destiny:
-                    # destination mode
-                    user_destinations.setdefault(user_id, []).append(chat.id)
-                    await message.reply_text(f"✅ Destination set: {chat.title}")
-                    waiting_for_destiny.discard(user_id)
-                else:
-                    # source mode
-                    user_sources[user_id] = chat.id
-                    await message.reply_text(f"✅ Source channel set: {chat.title}")
-            else:
-                await message.reply_text("⚠️ Bot must be admin in that channel/group.")
-        except Exception:
-            await message.reply_text("⚠️ Bot is not admin or cannot access that chat.")
-    else:
-        await message.reply_text("⚠️ Forwarded message must be from a channel/group.")
-
-
-# ---------- DESTINATION ----------
-waiting_for_destiny = set()
-
+# ---------- SET DESTINY ----------
 @app.on_message(filters.command("set_destiny") & filters.private)
 async def set_destiny(client, message):
     waiting_for_destiny.add(message.from_user.id)
@@ -107,6 +77,34 @@ async def set_destiny(client, message):
         "⚠️ Bot must be admin there."
     )
 
+# ---------- CATCH FORWARDED (source or destination) ----------
+@app.on_message(filters.forwarded & filters.private)
+async def catch_forwarded(client, message):
+    user_id = message.from_user.id
+    if not message.forward_from_chat:
+        return await message.reply_text("⚠️ Forwarded message must be from a channel/group.")
+    chat = message.forward_from_chat
+
+    try:
+        # If we can get chat info, bot has access
+        chat_info = await client.get_chat(chat.id)
+
+        if user_id in waiting_for_destiny:
+            # destination mode
+            user_destinations.setdefault(user_id, [])
+            if chat.id not in user_destinations[user_id]:
+                user_destinations[user_id].append(chat.id)
+            await message.reply_text(f"✅ Destination set: {chat_info.title}")
+            waiting_for_destiny.discard(user_id)
+        else:
+            # source mode
+            user_sources[user_id] = chat.id
+            await message.reply_text(f"✅ Source channel set: {chat_info.title}")
+
+    except Exception:
+        if user_id in waiting_for_destiny:
+            waiting_for_destiny.discard(user_id)
+        await message.reply_text("⚠️ Bot is not admin or cannot access that chat.")
 
 # ---------- SHOW / DELETE ----------
 @app.on_message(filters.command("show_source") & filters.private)
@@ -118,7 +116,6 @@ async def show_source(client, message):
     else:
         await message.reply_text("⚠️ No source set.")
 
-
 @app.on_message(filters.command("del_source") & filters.private)
 async def del_source(client, message):
     if message.from_user.id in user_sources:
@@ -126,7 +123,6 @@ async def del_source(client, message):
         await message.reply_text("✅ Source removed.")
     else:
         await message.reply_text("⚠️ No source to remove.")
-
 
 @app.on_message(filters.command("show_destiny") & filters.private)
 async def show_destiny(client, message):
@@ -139,7 +135,6 @@ async def show_destiny(client, message):
         await message.reply_text(text)
     else:
         await message.reply_text("⚠️ No destinations set.")
-
 
 @app.on_message(filters.command("del_destiny") & filters.private)
 async def del_destiny(client, message):
@@ -155,7 +150,6 @@ async def del_destiny(client, message):
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-
 @app.on_callback_query(filters.regex(r"del_(\-?\d+)"))
 async def del_destiny_cb(client, query):
     user_id = query.from_user.id
@@ -165,7 +159,6 @@ async def del_destiny_cb(client, query):
         await query.message.edit_text("✅ Destination removed.")
     else:
         await query.message.edit_text("⚠️ Destination not found.")
-
 
 # ---------- FORWARDER ----------
 @app.on_message(filters.channel)
@@ -181,6 +174,5 @@ async def forward_message(client, message):
                         await client.send_message(user_id, f"⚠️ Could not forward to {dest}: {e}")
                     except:
                         pass
-
 
 app.run()
