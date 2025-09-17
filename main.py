@@ -247,7 +247,7 @@ async def status_cmd(client, message):
         f"👤 Total Users: <b>{total_users}</b>\n"
         f"📢 Sources Set: <b>{total_sources}</b>\n"
         f"🎯 Destinations Added: <b>{total_destinations}</b>",
-        parse_mode="html"
+        parse_mode="ParseMode.HTML"
     )
 
 @app.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
