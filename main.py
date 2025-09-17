@@ -235,7 +235,7 @@ async def show_source(client, message):
         await message.reply_text("⚠️ No source set. Use /set_source to add one.", parse_mode=ParseMode.HTML)
 
 # ---------- STATUS & BROADCAST ----------
-@app.on_message(filters.command("status") & filters.user(OWNER_ID))
+@app.on_message(filters.command("stats") & filters.user(OWNER_ID))
 async def status_cmd(client, message):
     total_users = await users_collection.count_documents({})
     total_sources = await users_collection.count_documents({"source_chat": {"$ne": None}})
@@ -247,7 +247,7 @@ async def status_cmd(client, message):
         f"👤 Total Users: <b>{total_users}</b>\n"
         f"📢 Sources Set: <b>{total_sources}</b>\n"
         f"🎯 Destinations Added: <b>{total_destinations}</b>",
-        parse_mode="ParseMode.HTML"
+        parse_mode=ParseMode.HTML
     )
 
 @app.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
