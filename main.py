@@ -1,11 +1,16 @@
 import os
 import threading
+import asyncio
+import logging
 from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram.enums import ParseMode
-from pyrogram.errors import UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError
+from pyrogram.errors import UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError, FloodWait, BotBlocked, UserIsBot
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ---------- Flask healthcheck server ----------
 flask_app = Flask(__name__)
@@ -61,6 +66,44 @@ async def add_destination(user_id, chat_id):
 async def remove_destination(user_id, chat_id):
     await users_collection.update_one({"_id": user_id}, {"$pull": {"destination_chats": chat_id}})
 
+# safe send with floodwait handling and limited concurrency
+async def send_with_retry(client, chat_id, text, parse_mode="html", semaphore=None, retries=3):
+    # semaphore to limit concurrent sends (avoid floods)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(10)
+    async with semaphore:
+        for attempt in range(retries):
+            try:
+                return await client.send_message(chat_id, text, parse_mode=parse_mode)
+            except FloodWait as e:
+                wait = e.x if hasattr(e, 'x') else getattr(e, 'value', 5)
+                logger.warning(f"FloodWait: sleeping for {wait} seconds before retrying send to {chat_id}")
+                await asyncio.sleep(wait + 1)
+            except (BotBlocked, UserIsBot) as e:
+                logger.info(f"Cannot send message to {chat_id}: {e}")
+                return None
+            except Exception as e:
+                logger.exception(f"Failed to send message to {chat_id} on attempt {attempt+1}: {e}")
+                await asyncio.sleep(1)
+        return None
+
+# safe copy_message with floodwait handling
+async def copy_with_retry(client, chat_id, from_chat_id, message_id, semaphore=None, retries=3):
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(5)
+    async with semaphore:
+        for attempt in range(retries):
+            try:
+                return await client.copy_message(chat_id=chat_id, from_chat_id=from_chat_id, message_id=message_id, disable_notification=True)
+            except FloodWait as e:
+                wait = e.x if hasattr(e, 'x') else getattr(e, 'value', 5)
+                logger.warning(f"FloodWait: sleeping for {wait} seconds before retrying copy to {chat_id}")
+                await asyncio.sleep(wait + 1)
+            except Exception as e:
+                logger.exception(f"Failed to copy message to {chat_id} on attempt {attempt+1}: {e}")
+                await asyncio.sleep(1)
+        return None
+
 # ---------- START ----------
 @app.on_message(filters.command("start") & filters.private)
 async def start(client, message):
@@ -107,7 +150,7 @@ async def cb_handler(client, query):
         chat_id = int(query.data.split("_")[-1])
         try:
             chat = await client.get_chat(chat_id)
-            invite_link = chat.invite_link or "No invite link available."
+            invite_link = getattr(chat, 'invite_link', None) or "No invite link available."
             chat_type_str = chat.type.value.capitalize()
             text = f"🎯 <b>Destination Details:</b>\n" \
                    f"• <b>Name:</b> {chat.title}\n" \
@@ -116,7 +159,7 @@ async def cb_handler(client, query):
                    f"• <b>Invite Link:</b> {invite_link}\n\n" \
                    f"<i>Are you sure you want to remove this destination?</i>"
             buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("❌ Cancel this destination", callback_data=f"del_dest_confirm_{chat_id}")],
+                [InlineKeyboardButton("❌ Remove this destination", callback_data=f"del_dest_confirm_{chat_id}")],
                 [InlineKeyboardButton("🔙 Back to Destinations", callback_data="show_dest_list")]
             ])
             await query.message.edit_text(text, reply_markup=buttons, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
@@ -130,6 +173,7 @@ async def cb_handler(client, query):
         chat_id = int(query.data.split("_")[-1])
         await remove_destination(user_id, chat_id)
         await query.answer(f"Destination {chat_id} removed!", show_alert=True)
+        await query.message.edit_text(f"✅ Destination removed: <code>{chat_id}</code>", parse_mode=ParseMode.HTML)
         await show_destiny_list(client, query.message, edit_message=True)
 
     elif query.data == "del_source_confirm":
@@ -200,7 +244,7 @@ async def show_destiny_list(client, message, edit_message=False):
             try:
                 chat = await client.get_chat(d_chat_id)
                 buttons.append([InlineKeyboardButton(chat.title, callback_data=f"show_dest_info_{d_chat_id}")])
-            except:
+            except Exception:
                 buttons.append([InlineKeyboardButton(f"Unknown Chat ({d_chat_id})", callback_data=f"show_dest_info_{d_chat_id}")])
         reply_markup = InlineKeyboardMarkup(buttons)
         if edit_message:
@@ -210,6 +254,7 @@ async def show_destiny_list(client, message, edit_message=False):
     else:
         text = "⚠️ No destinations set. Use /set_destiny to add one."
         if edit_message:
+            # edit existing message so buttons are removed and clear context
             await message.edit_text(text, parse_mode=ParseMode.HTML)
         else:
             await message.reply_text(text, parse_mode=ParseMode.HTML)
@@ -252,36 +297,88 @@ async def status_cmd(client, message):
 
 @app.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
 async def broadcast_cmd(client, message):
+    # robust broadcast with concurrency limit and flood-wait handling
     if len(message.command) < 2:
         return await message.reply_text("Usage: /broadcast your message")
     text = message.text.split(" ", 1)[1]
+
+    sem = asyncio.Semaphore(10)  # max concurrent sends
     count = 0
+    failed = 0
+    tasks = []
+
     async for user_data in users_collection.find({}):
-        try:
-            await client.send_message(user_data["_id"], text, parse_mode="html")
+        uid = user_data.get("_id")
+        if not isinstance(uid, int):
+            # try to coerce
+            try:
+                uid = int(uid)
+            except:
+                continue
+        tasks.append(asyncio.create_task(send_with_retry(client, uid, text, semaphore=sem)))
+
+    if not tasks:
+        return await message.reply_text("ℹ️ No users found in database to broadcast.")
+
+    results = await asyncio.gather(*tasks)
+    for r in results:
+        if r is None:
+            failed += 1
+        else:
             count += 1
-        except:
-            pass
-    await message.reply_text(f"✅ Broadcast sent to {count} users.")
+
+    await message.reply_text(f"✅ Broadcast sent to {count} users. Failed: {failed}")
 
 # ---------- FORWARDER ----------
 @app.on_message(filters.channel)
 async def forward_message(client, message):
+    # limit concurrency for copies
+    sem = asyncio.Semaphore(5)
     async for user_data in users_collection.find({"source_chat": message.chat.id}):
         user_id = user_data["_id"]
         destinations = user_data.get("destination_chats", [])
         for dest_chat_id in destinations:
             try:
-                await client.copy_message(
-                    chat_id=dest_chat_id,
-                    from_chat_id=message.chat.id,
-                    message_id=message.id,
-                    disable_notification=True
-                )
+                await copy_with_retry(client, dest_chat_id, message.chat.id, message.id, semaphore=sem)
             except Exception as e:
                 try:
                     await client.send_message(user_id, f"⚠️ Could not forward to destination (ID: <code>{dest_chat_id}</code>). Error: {e}", parse_mode=ParseMode.HTML)
-                except:
+                except Exception:
                     pass
 
+# ---------- STARTUP CHECKS ----------
+async def startup_checks(client):
+    # verify bot is still member/admin in stored chats and report to owner if issues
+    logger.info("Running startup checks for stored chats...")
+    bad_chats = []
+    checked = set()
+    async for user_data in users_collection.find({}):
+        src = user_data.get("source_chat")
+        dests = user_data.get("destination_chats", [])
+        candidates = []
+        if src:
+            candidates.append(src)
+        candidates.extend(dests)
+        for chat_id in candidates:
+            if chat_id in checked:
+                continue
+            checked.add(chat_id)
+            try:
+                await client.get_chat_member(chat_id, client.me.id)
+            except Exception as e:
+                logger.warning(f"Bot not member/admin or cannot access chat {chat_id}: {e}")
+                bad_chats.append((chat_id, str(e)))
+
+    if bad_chats:
+        text = "⚠️ Startup check found chats where bot may not have access or admin rights:\n"
+        for cid, err in bad_chats[:50]:
+            text += f"• ID {cid}: {err}\n"
+        try:
+            await client.send_message(OWNER_ID, text)
+        except Exception:
+            logger.exception("Could not send startup report to owner")
+    else:
+        logger.info("Startup checks passed: bot has access to stored chats.")
+
+# ---------- RUN ----------
 app.run()
