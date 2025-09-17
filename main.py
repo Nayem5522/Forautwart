@@ -4,8 +4,8 @@ from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from motor.motor_asyncio import AsyncIOMotorClient
-from pyrogram.enums import ChatType # Import ChatType for better comparison
-from pyrogram.errors import UserNotParticipant, ChatAdminRequired # Specific error handling
+from pyrogram.enums import ChatType, ParseMode # Import ChatType and ParseMode
+from pyrogram.errors import UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError # More specific error handling
 
 # ---------- Flask healthcheck server ----------
 flask_app = Flask(__name__)
@@ -70,7 +70,8 @@ async def start(client, message):
     ])
     await message.reply_text(
         "👋 Welcome!\n\nThis bot can automatically forward posts from one channel/group to another.",
-        reply_markup=buttons
+        reply_markup=buttons,
+        parse_mode=ParseMode.HTML # Corrected parse_mode
     )
 
 @app.on_callback_query()
@@ -78,7 +79,7 @@ async def cb_handler(client, query):
     user_id = query.from_user.id
     if query.data == "about_cmd":
         me = await client.get_me()
-        about_message = f"""<b><blockquote>⍟───[  <a href='https://t.me/PrimeXBots'>ᴍy ᴅᴇᴛᴀɪʟꜱ</a ]───⍟</blockquote>
+        about_message = f"""<b><blockquote>⍟───[  <a href='https://t.me/PrimeXBots'>MY ᴅᴇᴛᴀɪʟꜱ ʙy ᴘʀɪᴍᴇXʙᴏᴛs</a ]───⍟</blockquote>
     
 ‣ ᴍʏ ɴᴀᴍᴇ : <a href=https://t.me/{me.username}>{me.first_name}</a>
 ‣ ᴍʏ ʙᴇsᴛ ғʀɪᴇɴᴅ : <a href='tg://settings'>ᴛʜɪs ᴘᴇʀsᴏɴ</a> 
@@ -89,17 +90,17 @@ async def cb_handler(client, query):
 ‣ ᴅᴀᴛᴀ ʙᴀsᴇ : <a href='https://www.mongodb.com/'>ᴍᴏɴɢᴏ ᴅʙ</a> 
 ‣ ʙᴏᴛ sᴇʀᴠᴇʀ : <a href='https://heroku.com'>ʜᴇʀᴏᴋᴜ</a> 
 ‣ ʙᴜɪʟᴅ sᴛᴀᴛᴜs : ᴠ2.7.1 [sᴛᴀʙʟᴇ]></b>"""
-        await query.message.edit_text(about_message, disable_web_page_preview=True, parse_mode="HTML")
+        await query.message.edit_text(about_message, disable_web_page_preview=True, parse_mode=ParseMode.HTML) # Corrected parse_mode
     elif query.data == "help_cmd":
         await query.message.edit_text(
             "📝 How to use:\n"
             "1️⃣ /set_source → Set source channel\n"
             "2️⃣ /set_destiny → Set destination channel/group\n"
-            "3️⃣ /show_destiny → Show and manage destinations\n" # Updated for new functionality
+            "3️⃣ /show_destiny → Show and manage destinations\n"
             "4️⃣ /show_source → Show current source\n"
             "5️⃣ /del_source → Delete source\n\n"
             "After setup, any post in source will be forwarded automatically to destinations.",
-            parse_mode="HTML"
+            parse_mode=ParseMode.HTML # Corrected parse_mode
         )
     elif query.data.startswith("show_dest_info_"):
         chat_id = int(query.data.split("_")[-1])
@@ -120,7 +121,7 @@ async def cb_handler(client, query):
                 [InlineKeyboardButton("❌ Cancel this destination", callback_data=f"del_dest_confirm_{chat_id}")],
                 [InlineKeyboardButton("🔙 Back to Destinations", callback_data="show_dest_list")]
             ])
-            await query.message.edit_text(text, reply_markup=buttons, parse_mode="HTML", disable_web_page_preview=True)
+            await query.message.edit_text(text, reply_markup=buttons, parse_mode=ParseMode.HTML, disable_web_page_preview=True) # Corrected parse_mode
         except Exception as e:
             print(f"Error in show_dest_info_ for chat_id {chat_id}: {e}") # Debugging print
             await query.message.edit_text(f"⚠️ Error fetching chat info for {chat_id}: {e}\n\n"
@@ -129,7 +130,7 @@ async def cb_handler(client, query):
                                           "2. The bot does not have sufficient permissions in this chat.\n"
                                           "3. The chat was deleted or its ID changed.\n\n"
                                           "Please ensure the bot has the necessary permissions and is in the chat.",
-                                          parse_mode="HTML")
+                                          parse_mode=ParseMode.HTML) # Corrected parse_mode
     
     elif query.data == "show_dest_list":
         await show_destiny_list(client, query.message, edit_message=True)
@@ -145,7 +146,7 @@ async def cb_handler(client, query):
 async def set_source(client, message):
     await message.reply_text(
         "📢 Please forward a message from your source channel here.\n\n"
-        "⚠️ Bot must be admin in that channel.", parse_mode="HTML"
+        "⚠️ Bot must be admin in that channel.", parse_mode=ParseMode.HTML # Corrected parse_mode
     )
 
 # ---------- SET DESTINY ----------
@@ -154,7 +155,7 @@ async def set_destiny(client, message):
     waiting_for_destiny.add(message.from_user.id)
     await message.reply_text(
         "🎯 Please forward a message from your destination channel/group.\n\n"
-        "⚠️ Bot must be admin there.", parse_mode="HTML"
+        "⚠️ Bot must be admin there.", parse_mode=ParseMode.HTML # Corrected parse_mode
     )
 
 # ---------- CATCH FORWARDED (source or destination) ----------
@@ -162,7 +163,7 @@ async def set_destiny(client, message):
 async def catch_forwarded(client, message):
     user_id = message.from_user.id
     if not message.forward_from_chat:
-        return await message.reply_text("⚠️ Forwarded message must be from a channel/group.", parse_mode="HTML")
+        return await message.reply_text("⚠️ Forwarded message must be from a channel/group.", parse_mode=ParseMode.HTML) # Corrected parse_mode
     chat = message.forward_from_chat
 
     try:
@@ -171,27 +172,34 @@ async def catch_forwarded(client, message):
         # If bot is not admin in a private channel/group, ChatAdminRequired might be raised.
         try:
             member = await client.get_chat_member(chat.id, client.me.id)
-            # if chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP, ChatType.GROUP] and member.status not in ["administrator", "creator", "member"]:
-            #     # If the bot is not even a member, get_chat_member would have failed already.
-            #     # If it's a member but not admin, it might still be able to copy messages.
-            #     # We'll rely on copy_message's error handling for specific permission failures.
-            #     pass
+            # We are not strictly checking member.status here as copy_message will fail if permissions are insufficient.
+            # The primary goal of get_chat_member is to confirm bot is *in* the chat.
         except UserNotParticipant:
-            await message.reply_text(f"⚠️ Bot is not a member of {chat.title}. Please add me to the chat first.", parse_mode="HTML")
+            await message.reply_text(f"⚠️ Bot is not a member of {chat.title} (ID: <code>{chat.id}</code>). Please add me to the chat first.", parse_mode=ParseMode.HTML) # Corrected parse_mode
             if user_id in waiting_for_destiny:
                 waiting_for_destiny.discard(user_id)
             return
         except ChatAdminRequired:
              # This can happen if the chat is private and bot is not admin,
              # and get_chat_member implicitly requires admin for some reason.
-            await message.reply_text(f"⚠️ Bot needs to be an administrator in {chat.title} to get its details. Please promote me.", parse_mode="HTML")
+            await message.reply_text(f"⚠️ Bot needs to be an administrator in {chat.title} (ID: <code>{chat.id}</code>) to get its details. Please promote me.", parse_mode=ParseMode.HTML) # Corrected parse_mode
+            if user_id in waiting_for_destiny:
+                waiting_for_destiny.discard(user_id)
+            return
+        except PeerIdInvalid:
+            await message.reply_text(f"⚠️ Invalid chat ID for {chat.title} (ID: <code>{chat.id}</code>). It might be a private chat I cannot access, or the chat no longer exists.", parse_mode=ParseMode.HTML) # Corrected parse_mode
+            if user_id in waiting_for_destiny:
+                waiting_for_destiny.discard(user_id)
+            return
+        except RPCError as e:
+            await message.reply_text(f"⚠️ Telegram API error while checking bot's status in {chat.title} (ID: <code>{chat.id}</code>): {e}. Please try again later.", parse_mode=ParseMode.HTML) # Corrected parse_mode
             if user_id in waiting_for_destiny:
                 waiting_for_destiny.discard(user_id)
             return
         except Exception as e:
             # General error getting chat member (e.g., chat doesn't exist or private and bot not invited)
-            await message.reply_text(f"⚠️ Could not get bot's status in {chat.title}. Error: {e}. "
-                                     "Please ensure the chat exists and the bot is invited.", parse_mode="HTML")
+            await message.reply_text(f"⚠️ Could not get bot's status in {chat.title} (ID: <code>{chat.id}</code>). Error: {e}. "
+                                     "Please ensure the chat exists and the bot is invited.", parse_mode=ParseMode.HTML) # Corrected parse_mode
             if user_id in waiting_for_destiny:
                 waiting_for_destiny.discard(user_id)
             return
@@ -204,14 +212,14 @@ async def catch_forwarded(client, message):
             user_data = await get_user_data(user_id)
             if chat.id not in user_data["destination_chats"]:
                 await add_destination(user_id, chat.id)
-                await message.reply_text(f"✅ Destination set: {chat_info.title}", parse_mode="HTML")
+                await message.reply_text(f"✅ Destination set: {chat_info.title}", parse_mode=ParseMode.HTML) # Corrected parse_mode
             else:
-                await message.reply_text(f"ℹ️ This destination is already added: {chat_info.title}", parse_mode="HTML")
+                await message.reply_text(f"ℹ️ This destination is already added: {chat_info.title}", parse_mode=ParseMode.HTML) # Corrected parse_mode
             waiting_for_destiny.discard(user_id)
         else:
             # Source mode
             await update_user_data(user_id, "source_chat", chat.id)
-            await message.reply_text(f"✅ Source channel set: {chat_info.title}", parse_mode="HTML")
+            await message.reply_text(f"✅ Source channel set: {chat_info.title}", parse_mode=ParseMode.HTML) # Corrected parse_mode
 
     except Exception as e:
         print(f"Error in catch_forwarded for chat_id {chat.id}: {e}") # Debugging print
@@ -221,7 +229,7 @@ async def catch_forwarded(client, message):
                                  "Please ensure:\n"
                                  "1. The forwarded message is from a valid channel or group.\n"
                                  "2. The bot is a member of the forwarded chat.\n"
-                                 "3. The bot has necessary permissions (e.g., admin for private channels/groups, if required for reading/copying).", parse_mode="HTML")
+                                 "3. The bot has necessary permissions (e.g., admin for private channels/groups, if required for reading/copying).", parse_mode=ParseMode.HTML) # Corrected parse_mode
 
 # ---------- SHOW / DELETE (Updated) ----------
 async def show_destiny_list(client, message, edit_message=False):
@@ -244,19 +252,19 @@ async def show_destiny_list(client, message, edit_message=False):
         reply_markup = InlineKeyboardMarkup(buttons)
         try:
             if edit_message:
-                await message.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
+                await message.edit_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML) # Corrected parse_mode
             else:
-                await message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
+                await message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML) # Corrected parse_mode
         except Exception as e:
             print(f"Error sending/editing message in show_destiny_list: {e}") # Debugging print
             # Fallback if edit_text fails (e.g., message too old)
-            await message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
+            await message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML) # Corrected parse_mode
 
     else:
         if edit_message:
-            await message.edit_text("⚠️ No destinations set.", parse_mode="HTML")
+            await message.edit_text("⚠️ No destinations set.", parse_mode=ParseMode.HTML) # Corrected parse_mode
         else:
-            await message.reply_text("⚠️ No destinations set. Use /set_destiny to add one.", parse_mode="HTML")
+            await message.reply_text("⚠️ No destinations set. Use /set_destiny to add one.", parse_mode=ParseMode.HTML) # Corrected parse_mode
 
 @app.on_message(filters.command("show_destiny") & filters.private)
 async def show_destiny_command(client, message):
@@ -270,20 +278,20 @@ async def show_source(client, message):
     if src:
         try:
             chat = await client.get_chat(src)
-            await message.reply_text(f"📢 Current source: {chat.title}", parse_mode="HTML")
+            await message.reply_text(f"📢 Current source: {chat.title}", parse_mode=ParseMode.HTML) # Corrected parse_mode
         except Exception as e:
-            await message.reply_text(f"⚠️ Current source ({src}) is inaccessible. Error: {e}\n\nPlease /del_source and /set_source again.", parse_mode="HTML")
+            await message.reply_text(f"⚠️ Current source ({src}) is inaccessible. Error: {e}\n\nPlease /del_source and /set_source again.", parse_mode=ParseMode.HTML) # Corrected parse_mode
     else:
-        await message.reply_text("⚠️ No source set. Use /set_source to add one.", parse_mode="HTML")
+        await message.reply_text("⚠️ No source set. Use /set_source to add one.", parse_mode=ParseMode.HTML) # Corrected parse_mode
 
 @app.on_message(filters.command("del_source") & filters.private)
 async def del_source(client, message):
     user_data = await get_user_data(message.from_user.id)
     if user_data.get("source_chat"):
         await update_user_data(message.from_user.id, "source_chat", None)
-        await message.reply_text("✅ Source removed.", parse_mode="HTML")
+        await message.reply_text("✅ Source removed.", parse_mode=ParseMode.HTML) # Corrected parse_mode
     else:
-        await message.reply_text("⚠️ No source to remove.", parse_mode="HTML")
+        await message.reply_text("⚠️ No source to remove.", parse_mode=ParseMode.HTML) # Corrected parse_mode
 
 # ---------- FORWARDER ----------
 @app.on_message(filters.channel)
@@ -306,9 +314,9 @@ async def forward_message(client, message):
                 # If error, try to notify the user
                 try:
                     await client.send_message(user_id, f"⚠️ Could not forward message from {message.chat.title} to destination (ID: <code>{dest_chat_id}</code>). Error: {e}\n"
-                                                     "Please ensure the bot is a member and has permission to post in the destination chat.", parse_mode="HTML")
+                                                     "Please ensure the bot is a member and has permission to post in the destination chat.", parse_mode=ParseMode.HTML) # Corrected parse_mode
                 except Exception as notify_e:
                     # If even notification fails, log it or print to console
                     print(f"Failed to notify user {user_id} about forwarding error to {dest_chat_id}. Error: {notify_e}")
 
-app.run() 
+app.run()
