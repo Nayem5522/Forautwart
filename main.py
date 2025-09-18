@@ -163,11 +163,12 @@ async def cb_handler(client, query):
         ])
 
         await query.message.edit_text(
-        ‌    about_text,
+            about_text,
             disable_web_page_preview=True,
             parse_mode=ParseMode.HTML,
             reply_markup=buttons
-        )
+            )
+        
         
     elif query.data == "help_cmd":
         help_text = (
