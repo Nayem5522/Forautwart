@@ -122,7 +122,14 @@ async def start(client, message):
 @app.on_callback_query()
 async def cb_handler(client, query):
     user_id = query.from_user.id
-    if query.data == "about_cmd":
+    if query.data == "close":
+        try:
+            await query.message.delete()
+        except Exception:
+            await query.answer("⚠️ Cannot delete message.", show_alert=True)
+        return  # exit early
+        
+    elif query.data == "about_cmd":
         me = await client.get_me()
         about_message = f"""<b><blockquote>⍟───[  <a href='https://t.me/PrimeXBots'>MY ᴅᴇᴛᴀɪʟꜱ ʙy ᴘʀɪᴍᴇXʙᴏᴛs</a ]───⍟</blockquote>
 
@@ -161,8 +168,8 @@ async def cb_handler(client, query):
                    f"• <b>Invite Link:</b> {invite_link}\n\n" \
                    f"<i>Are you sure you want to remove this destination?</i>"
             buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("❌ Remove this destination", callback_data=f"del_dest_confirm_{chat_id}")],
-                [InlineKeyboardButton("🔙 Back to Destinations", callback_data="show_dest_list")]
+                [InlineKeyboardButton("❌ Remove this destination ❗", callback_data=f"del_dest_confirm_{chat_id}")],
+                [InlineKeyboardButton("❌ Close ⭕", callback_data="close")]
             ])
             await query.message.edit_text(text, reply_markup=buttons, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         except Exception as e:
