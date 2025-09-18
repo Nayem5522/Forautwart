@@ -121,16 +121,17 @@ async def start(client, message):
         ],
         [InlineKeyboardButton("✧ ᴄʀᴇᴀᴛᴏʀ ✧", url="https://t.me/Prime_Nayem")]
     ]
-    await msg.reply_photo(
+
+    await message.reply_photo(
         photo="https://i.postimg.cc/fyrXmg6S/file-000000004e7461faaef2bd964cbbd408.png",
         caption=(
-            f"👋 Hello {msg.from_user.mention},\n\n"
+            f"👋 Hello {message.from_user.mention},\n\n"
             "👋 Welcome!\n\nThis bot can automatically forward posts from one channel/group to another Channel/group\n\n"
             "⊰•─•─✦✗✦─•◈•─✦✗✦─•─•⊱\n"
             "⚡ Use the buttons below to navigate and get started!"
         ),
-        reply_markup=InlineKeyboardMarkup(buttons)#,parse_mode=ParseMode.HTML
-    )
+        reply_markup=InlineKeyboardMarkup(buttons)
+        )
 
 @app.on_callback_query()
 async def cb_handler(client, query):
