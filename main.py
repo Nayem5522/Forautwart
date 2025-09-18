@@ -145,29 +145,52 @@ async def cb_handler(client, query):
         
     elif query.data == "about_cmd":
         me = await client.get_me()
-        about_message = f"""<b>⍟───[  <a href='https://t.me/PrimeXBots'>ᴍy ᴅᴇᴛᴀɪʟꜱ ʙy ᴘʀɪᴍᴇXʙᴏᴛs</a ]───⍟</b>
-
-‣ ᴍʏ ɴᴀᴍᴇ : <a href=https://t.me/{me.username}>{me.first_name}</a>
-‣ ᴍʏ ʙᴇsᴛ ғʀɪᴇɴᴅ : <a href='tg://settings'>ᴛʜɪs ᴘᴇʀsᴏɴ</a> 
-‣ ᴅᴇᴠᴇʟᴏᴘᴇʀ : <a href='https://t.me/Prime_Nayem'>ᴍʀ.ᴘʀɪᴍᴇ</a> 
-‣ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ : <a href='https://t.me/PrimeXBots'>ᴘʀɪᴍᴇXʙᴏᴛꜱ</a> 
-‣ ᴍᴀɪɴ ᴄʜᴀɴɴᴇʟ : <a href='https://t.me/PrimeCineZone'>Pʀɪᴍᴇ Cɪɴᴇᴢᴏɴᴇ</a> 
-‣ ѕᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ : <a href='https://t.me/Prime_Support_group'>ᴘʀɪᴍᴇ X ѕᴜᴘᴘᴏʀᴛ</a> 
-‣ ᴅᴀᴛᴀ ʙᴀsᴇ : <a href='https://www.mongodb.com/'>ᴍᴏɴɢᴏ ᴅʙ</a> 
-‣ ʙᴏᴛ sᴇʀᴠᴇʀ : <a href='https://heroku.com'>ʜᴇʀᴏᴋᴜ</a> 
-‣ ʙᴜɪʟᴅ sᴛᴀᴛᴜs : ᴠ2.7.1 [sᴛᴀʙʟᴇ]>"""
-        await query.message.edit_text(about_message, disable_web_page_preview=True, parse_mode=ParseMode.HTML)
-
-    elif query.data == "help_cmd":
-        await query.message.edit_text(
-            "📝 How to use:\n"
-            "1️⃣ /set_source → Set source channel\n"
-            "2️⃣ /set_destiny → Set destination channel/group\n"
-            "3️⃣ /show_destiny → Show and manage destinations\n"
-            "4️⃣ /show_source → Show current source & remove\n\n"
-            "After setup, any post in source will be forwarded automatically to destinations.",
-            parse_mode=ParseMode.HTML
+        about_text = (
+            "<b><blockquote>⍟───[  <a href='https://t.me/PrimeXBots'>ᴍʏ ᴅᴇᴛᴀɪʟꜱ ʙʏ ᴘʀɪᴍᴇXʙᴏᴛꜱ</a> ]───⍟</blockquote></b>\n\n"
+            f"‣ ᴍʏ ɴᴀᴍᴇ : <a href='https://t.me/{me.username}'>{me.first_name}</a>\n"
+            "‣ ʙᴇꜱᴛ ꜰʀɪᴇɴᴅ : <a href='tg://settings'>ᴛʜɪꜱ ᴘᴇʀꜱᴏɴ</a>\n"
+            "‣ ᴅᴇᴠᴇʟᴏᴘᴇʀ : <a href='https://t.me/Prime_Nayem'>ᴍʀ.ᴘʀɪᴍᴇ</a>\n"
+            "‣ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ : <a href='https://t.me/PrimeXBots'>ᴘʀɪᴍᴇXʙᴏᴛꜱ</a>\n"
+            "‣ ᴍᴀɪɴ ᴄʜᴀɴɴᴇʟ : <a href='https://t.me/PrimeCineZone'>ᴘʀɪᴍᴇ ᴄɪɴᴇᴢᴏɴᴇ</a>\n"
+            "‣ ꜱᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ : <a href='https://t.me/Prime_Support_group'>ᴘʀɪᴍᴇX ꜱᴜᴘᴘᴏʀᴛ</a>\n"
+            "‣ ᴅᴀᴛᴀʙᴀꜱᴇ : <a href='https://www.mongodb.com/'>ᴍᴏɴɢᴏᴅʙ</a>\n"
+            "‣ ʙᴏᴛ ꜱᴇʀᴠᴇʀ : <a href='https://heroku.com'>ʜᴇʀᴏᴋᴜ</a>\n"
+            "‣ ʙᴜɪʟᴅ ꜱᴛᴀᴛᴜꜱ : v2.7.1 [ꜱᴛᴀʙʟᴇ]\n"
         )
+
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Close", callback_data="close")]
+        ])
+
+        await query.message.edit_text(
+        ‌    about_text,
+            disable_web_page_preview=True,
+            parse_mode=ParseMode.HTML,
+            reply_markup=buttons
+        )
+        
+    elif query.data == "help_cmd":
+        help_text = (
+            "📝 <b>How to use this bot:</b>\n\n"
+            "➊ <code>/set_source</code> – Set your source channel (bot must be admin there)\n"
+            "➋ <code>/set_destiny</code> – Set your destination channel/group (bot must be admin there)\n"
+            "➌ <code>/show_source</code> – View or remove the current source\n"
+            "➍ <code>/show_destiny</code> – View/manage all your destinations\n"
+            "➎ <code>/stats</code> – View total users, sources & destinations (Owner only)\n"
+            "➏ <code>/broadcast</code> <i>your message</i> – Send a broadcast to all users (Owner only)\n\n"
+            "⚡ After setting a source, new posts from it will automatically be forwarded to your destinations."
+        )
+
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Close", callback_data="close")]
+        ])
+
+        await query.message.edit_text(
+            help_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=buttons
+        )
+    
 
     elif query.data.startswith("show_dest_info_"):
         chat_id = int(query.data.split("_")[-1])
