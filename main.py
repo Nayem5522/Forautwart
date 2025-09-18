@@ -434,11 +434,5 @@ async def startup_checks(client):
         logger.info("Startup checks passed: bot has access to stored chats.")
 
 # ---------- RUN ----------
-async def main():
-    await app.start()
-    await startup_checks(app)
-    await app.idle() # This keeps the bot running
-    await app.stop()
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    app.run()   
