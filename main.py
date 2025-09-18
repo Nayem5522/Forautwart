@@ -177,14 +177,24 @@ async def cb_handler(client, query):
 
     elif query.data == "show_dest_list":
         await show_destiny_list(client, query.message, edit_message=True)
-    
+        
     elif query.data.startswith("del_dest_confirm_"):
         chat_id = int(query.data.split("_")[-1])
         await remove_destination(user_id, chat_id)
-        await query.answer(f"Destination {chat_id} removed!", show_alert=True)
-        custom_text = f"✅ Destination removed: <code>{chat_id}</code>"
-        await show_destiny_list(client, query.message, edit_message=True, custom_text=custom_text)
 
+    # chat_info নিয়ে আসা
+        try:
+            chat_info = await client.get_chat(chat_id)
+            chat_name = chat_info.title
+        except Exception:
+            chat_name = str(chat_id)  # fallback যদি চ্যানেল info fetch না হয়
+
+        await query.answer(f"Destination {chat_name} removed!", show_alert=True)
+
+    # custom_text দিয়ে লিস্ট দেখানো হবে
+        custom_text = f"✅ Destination removed: <b>{chat_name}</b>"
+        await show_destiny_list(client, query.message, edit_message=True, custom_text=custom_text)
+    
     
     elif query.data == "del_source_confirm":
         await update_user_data(user_id, "source_chat", None)
