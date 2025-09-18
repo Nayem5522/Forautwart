@@ -7,8 +7,7 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram.enums import ParseMode
-#from pyrogram.errors import UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError, FloodWait, BotBlocked, UserIsBot
-from pyrogram.errors import UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError, FloodWait, UserIsBot
+from pyrogram.errors import UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError, FloodWait, UserIsBot, BotBlocked
 
 
 logging.basicConfig(level=logging.INFO)
@@ -166,17 +165,34 @@ async def cb_handler(client, query):
             ])
             await query.message.edit_text(text, reply_markup=buttons, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         except Exception as e:
-            await query.message.edit_text(f"⚠️ Error fetching chat info for {chat_id}: {e}", parse_mode=ParseMode.HTML)
+            # If chat info can't be fetched, maybe it's gone or bot was removed. Offer to remove it.
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("❌ Remove inaccessible destination", callback_data=f"del_dest_confirm_{chat_id}")],
+                [InlineKeyboardButton("🔙 Back to Destinations", callback_data="show_dest_list")]
+            ])
+            await query.message.edit_text(f"⚠️ Error fetching chat info for <code>{chat_id}</code>: {e}\nIt might be inaccessible. Do you want to remove it?", reply_markup=buttons, parse_mode=ParseMode.HTML)
+
 
     elif query.data == "show_dest_list":
+        # Simply call show_destiny_list, it will handle editing the message appropriately
         await show_destiny_list(client, query.message, edit_message=True)
 
     elif query.data.startswith("del_dest_confirm_"):
         chat_id = int(query.data.split("_")[-1])
+        removed_chat_name = f"<code>{chat_id}</code>" # Default name if we can't get chat info
+        try:
+            chat = await client.get_chat(chat_id)
+            removed_chat_name = chat.title
+        except Exception:
+            pass # Ignore error, we can still remove by ID
+
         await remove_destination(user_id, chat_id)
-        await query.answer(f"Destination {chat_id} removed!", show_alert=True)
-        await query.message.edit_text(f"✅ Destination removed: <code>{chat_id}</code>", parse_mode=ParseMode.HTML)
+        await query.answer(f"Destination {removed_chat_name} removed!", show_alert=True)
+        # After removal, re-display the destination list with an appropriate message
+        await query.message.edit_text(f"✅ Destination removed: <b>{removed_chat_name}</b>", parse_mode=ParseMode.HTML)
+        # Then, show the updated list
         await show_destiny_list(client, query.message, edit_message=True)
+
 
     elif query.data == "del_source_confirm":
         await update_user_data(user_id, "source_chat", None)
@@ -207,10 +223,15 @@ async def catch_forwarded(client, message):
     chat = message.forward_from_chat
     try:
         try:
-            await client.get_chat_member(chat.id, client.me.id)
+            # Check bot's status in the forwarded chat
+            chat_member = await client.get_chat_member(chat.id, client.me.id)
+            if not chat_member.can_post_messages: # More specific check for admin rights needed for forwarding
+                 return await message.reply_text(f"⚠️ Bot is not an admin with post rights in {chat.title} (ID: <code>{chat.id}</code>). Please promote me.", parse_mode=ParseMode.HTML)
+
         except UserNotParticipant:
             return await message.reply_text(f"⚠️ Bot is not a member of {chat.title} (ID: <code>{chat.id}</code>). Please add me first.", parse_mode=ParseMode.HTML)
         except ChatAdminRequired:
+            # This error typically means the bot needs to be admin to even *see* members in private groups/channels
             return await message.reply_text(f"⚠️ Bot needs to be admin in {chat.title} (ID: <code>{chat.id}</code>). Please promote me.", parse_mode=ParseMode.HTML)
         except PeerIdInvalid:
             return await message.reply_text(f"⚠️ Invalid chat ID for {chat.title}.", parse_mode=ParseMode.HTML)
@@ -223,13 +244,13 @@ async def catch_forwarded(client, message):
             user_data = await get_user_data(user_id)
             if chat.id not in user_data["destination_chats"]:
                 await add_destination(user_id, chat.id)
-                await message.reply_text(f"✅ Destination set: {chat_info.title}", parse_mode=ParseMode.HTML)
+                await message.reply_text(f"✅ Destination set: <b>{chat_info.title}</b>", parse_mode=ParseMode.HTML)
             else:
-                await message.reply_text(f"ℹ️ This destination is already added: {chat_info.title}", parse_mode=ParseMode.HTML)
+                await message.reply_text(f"ℹ️ This destination is already added: <b>{chat_info.title}</b>", parse_mode=ParseMode.HTML)
             waiting_for_destiny.discard(user_id)
         else:
             await update_user_data(user_id, "source_chat", chat.id)
-            await message.reply_text(f"✅ Source channel set: {chat_info.title}", parse_mode=ParseMode.HTML)
+            await message.reply_text(f"✅ Source channel set: <b>{chat_info.title}</b>", parse_mode=ParseMode.HTML)
 
     except Exception as e:
         waiting_for_destiny.discard(user_id)
@@ -247,7 +268,8 @@ async def show_destiny_list(client, message, edit_message=False):
                 chat = await client.get_chat(d_chat_id)
                 buttons.append([InlineKeyboardButton(chat.title, callback_data=f"show_dest_info_{d_chat_id}")])
             except Exception:
-                buttons.append([InlineKeyboardButton(f"Unknown Chat ({d_chat_id})", callback_data=f"show_dest_info_{d_chat_id}")])
+                # If we can't get chat info, show its ID
+                buttons.append([InlineKeyboardButton(f"Unknown Chat (<code>{d_chat_id}</code>)", callback_data=f"show_dest_info_{d_chat_id}")])
         reply_markup = InlineKeyboardMarkup(buttons)
         if edit_message:
             await message.edit_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
@@ -255,11 +277,12 @@ async def show_destiny_list(client, message, edit_message=False):
             await message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
     else:
         text = "⚠️ No destinations set. Use /set_destiny to add one."
+        # Always remove buttons if no destinations
         if edit_message:
-            # edit existing message so buttons are removed and clear context
-            await message.edit_text(text, parse_mode=ParseMode.HTML)
+            await message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup([])) # Clear buttons
         else:
             await message.reply_text(text, parse_mode=ParseMode.HTML)
+
 
 @app.on_message(filters.command("show_destiny") & filters.private)
 async def show_destiny_command(client, message):
@@ -275,9 +298,12 @@ async def show_source(client, message):
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton("❌ Remove Source", callback_data="del_source_confirm")]
             ])
-            await message.reply_text(f"📢 Current source: {chat.title}", reply_markup=buttons, parse_mode=ParseMode.HTML)
+            await message.reply_text(f"📢 Current source: <b>{chat.title}</b>", reply_markup=buttons, parse_mode=ParseMode.HTML)
         except Exception as e:
-            await message.reply_text(f"⚠️ Current source ({src}) is inaccessible. Error: {e}", parse_mode=ParseMode.HTML)
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("❌ Remove inaccessible source", callback_data="del_source_confirm")]
+            ])
+            await message.reply_text(f"⚠️ Current source (<code>{src}</code>) is inaccessible. Error: {e}\nDo you want to remove it?", reply_markup=buttons, parse_mode=ParseMode.HTML)
     else:
         await message.reply_text("⚠️ No source set. Use /set_source to add one.", parse_mode=ParseMode.HTML)
 
@@ -309,18 +335,27 @@ async def broadcast_cmd(client, message):
     failed = 0
     tasks = []
 
+    # Iterate through users_collection and ensure _id is int
     async for user_data in users_collection.find({}):
         uid = user_data.get("_id")
-        if not isinstance(uid, int):
-            # try to coerce
+        if isinstance(uid, str): # Try to convert string IDs to int
             try:
                 uid = int(uid)
-            except:
-                continue
-        tasks.append(asyncio.create_task(send_with_retry(client, uid, text, semaphore=sem)))
+            except ValueError:
+                logger.warning(f"Invalid user ID found in DB: {user_data.get('_id')}. Skipping.")
+                continue # Skip this user if ID is not a valid integer
+
+        if isinstance(uid, int): # Ensure it's an int before adding to tasks
+            tasks.append(asyncio.create_task(send_with_retry(client, uid, text, semaphore=sem)))
+        else:
+            logger.warning(f"User ID {uid} is not an integer. Skipping broadcast to this user.")
+
 
     if not tasks:
         return await message.reply_text("ℹ️ No users found in database to broadcast.")
+
+    # Show initial broadcast message
+    broadcast_msg = await message.reply_text("🚀 Starting broadcast...")
 
     results = await asyncio.gather(*tasks)
     for r in results:
@@ -329,7 +364,7 @@ async def broadcast_cmd(client, message):
         else:
             count += 1
 
-    await message.reply_text(f"✅ Broadcast sent to {count} users. Failed: {failed}")
+    await broadcast_msg.edit_text(f"✅ Broadcast sent to {count} users. Failed: {failed}")
 
 # ---------- FORWARDER ----------
 @app.on_message(filters.channel)
@@ -344,9 +379,15 @@ async def forward_message(client, message):
                 await copy_with_retry(client, dest_chat_id, message.chat.id, message.id, semaphore=sem)
             except Exception as e:
                 try:
-                    await client.send_message(user_id, f"⚠️ Could not forward to destination (ID: <code>{dest_chat_id}</code>). Error: {e}", parse_mode=ParseMode.HTML)
-                except Exception:
-                    pass
+                    # Log the error and notify the user (owner)
+                    logger.error(f"Failed to forward message {message.id} from {message.chat.id} to {dest_chat_id} for user {user_id}. Error: {e}")
+                    # Only send a specific notification if the error is significant and not just a normal failure
+                    # For example, if the bot was removed from the destination chat
+                    if "CHAT_WRITE_FORBIDDEN" in str(e) or "USER_BLOCKED_BOT" in str(e): # Simplified check for common errors
+                        await client.send_message(user_id, f"⚠️ Could not forward to destination (ID: <code>{dest_chat_id}</code> - Name: {dest_chat_id if isinstance(dest_chat_id, str) else 'Unknown'}). Bot might not have access or admin rights anymore. Error: {e}", parse_mode=ParseMode.HTML)
+                except Exception as inner_e:
+                    logger.exception(f"Failed to notify user {user_id} about forwarding error: {inner_e}")
+
 
 # ---------- STARTUP CHECKS ----------
 async def startup_checks(client):
@@ -366,21 +407,38 @@ async def startup_checks(client):
                 continue
             checked.add(chat_id)
             try:
-                await client.get_chat_member(chat_id, client.me.id)
+                # Check if bot is a member and has rights to post
+                chat_member = await client.get_chat_member(chat_id, client.me.id)
+                if not chat_member.can_post_messages:
+                    bad_chats.append((chat_id, "Bot is not an admin with 'Post Messages' right."))
+            except UserNotParticipant:
+                bad_chats.append((chat_id, "Bot is not a member of this chat."))
+            except ChatAdminRequired:
+                bad_chats.append((chat_id, "Bot needs to be admin to check membership in this private chat."))
             except Exception as e:
-                logger.warning(f"Bot not member/admin or cannot access chat {chat_id}: {e}")
+                logger.warning(f"Bot cannot access chat {chat_id}: {e}")
                 bad_chats.append((chat_id, str(e)))
 
     if bad_chats:
-        text = "⚠️ Startup check found chats where bot may not have access or admin rights:\n"
-        for cid, err in bad_chats[:50]:
-            text += f"• ID {cid}: {err}\n"
+        text = "⚠️ <b>Startup check found issues with stored chats:</b>\n"
+        for cid, err in bad_chats[:50]: # Limit report size
+            text += f"• ID <code>{cid}</code>: {err}\n"
+        if len(bad_chats) > 50:
+            text += f"• ...and {len(bad_chats) - 50} more issues.\n"
+        text += "\nPlease review these chats and update your source/destinations."
         try:
-            await client.send_message(OWNER_ID, text)
+            await client.send_message(OWNER_ID, text, parse_mode=ParseMode.HTML)
         except Exception:
             logger.exception("Could not send startup report to owner")
     else:
         logger.info("Startup checks passed: bot has access to stored chats.")
 
 # ---------- RUN ----------
-app.run()
+async def main():
+    await app.start()
+    await startup_checks(app)
+    await app.idle() # This keeps the bot running
+    await app.stop()
+
+if __name__ == "__main__":
+    asyncio.run(main())
