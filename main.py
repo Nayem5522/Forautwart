@@ -105,18 +105,31 @@ async def copy_with_retry(client, chat_id, from_chat_id, message_id, semaphore=N
                 logger.exception(f"Failed to copy message to {chat_id} on attempt {attempt+1}: {e}")
                 await asyncio.sleep(1)
         return None
-
+        
 # ---------- START ----------
 @app.on_message(filters.command("start") & filters.private)
 async def start(client, message):
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("ℹ️ About", callback_data="about_cmd")],
-        [InlineKeyboardButton("📖 Help", callback_data="help_cmd")]
-    ])
-    await message.reply_text(
-        "👋 Welcome!\n\nThis bot can automatically forward posts from one channel/group to another.",
-        reply_markup=buttons,
-        parse_mode=ParseMode.HTML
+    buttons = [
+        [
+            InlineKeyboardButton("✪ ꜱᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ ✪", url="https://t.me/Prime_Support_group"),
+            InlineKeyboardButton("〄 ᴍᴏᴠɪᴇ ᴄʜᴀɴɴᴇʟ 〄", url="https://t.me/PrimeCineZone")
+        ],
+        [InlineKeyboardButton("〄 ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ 〄", url="https://t.me/PrimeXBots")],
+        [
+            InlineKeyboardButton("〆 ʜᴇʟᴘ 〆", callback_data="help_cmd"),
+            InlineKeyboardButton("〆 ᴀʙᴏᴜᴛ 〆", callback_data="about_cmd")
+        ],
+        [InlineKeyboardButton("✧ ᴄʀᴇᴀᴛᴏʀ ✧", url="https://t.me/Prime_Nayem")]
+    ]
+    await msg.reply_photo(
+        photo="https://i.postimg.cc/fyrXmg6S/file-000000004e7461faaef2bd964cbbd408.png",
+        caption=(
+            f"👋 Hello {msg.from_user.mention},\n\n"
+            "👋 Welcome!\n\nThis bot can automatically forward posts from one channel/group to another Channel/group\n\n"
+            "⊰•─•─✦✗✦─•◈•─✦✗✦─•─•⊱\n"
+            "⚡ Use the buttons below to navigate and get started!"
+        ),
+        reply_markup=InlineKeyboardMarkup(buttons)#,parse_mode=ParseMode.HTML
     )
 
 @app.on_callback_query()
@@ -131,7 +144,7 @@ async def cb_handler(client, query):
         
     elif query.data == "about_cmd":
         me = await client.get_me()
-        about_message = f"""<b><blockquote>⍟───[  <a href='https://t.me/PrimeXBots'>MY ᴅᴇᴛᴀɪʟꜱ ʙy ᴘʀɪᴍᴇXʙᴏᴛs</a ]───⍟</blockquote>
+        about_message = f"""<b>⍟───[  <a href='https://t.me/PrimeXBots'>ᴍy ᴅᴇᴛᴀɪʟꜱ ʙy ᴘʀɪᴍᴇXʙᴏᴛs</a ]───⍟</b>
 
 ‣ ᴍʏ ɴᴀᴍᴇ : <a href=https://t.me/{me.username}>{me.first_name}</a>
 ‣ ᴍʏ ʙᴇsᴛ ғʀɪᴇɴᴅ : <a href='tg://settings'>ᴛʜɪs ᴘᴇʀsᴏɴ</a> 
@@ -141,7 +154,7 @@ async def cb_handler(client, query):
 ‣ ѕᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ : <a href='https://t.me/Prime_Support_group'>ᴘʀɪᴍᴇ X ѕᴜᴘᴘᴏʀᴛ</a> 
 ‣ ᴅᴀᴛᴀ ʙᴀsᴇ : <a href='https://www.mongodb.com/'>ᴍᴏɴɢᴏ ᴅʙ</a> 
 ‣ ʙᴏᴛ sᴇʀᴠᴇʀ : <a href='https://heroku.com'>ʜᴇʀᴏᴋᴜ</a> 
-‣ ʙᴜɪʟᴅ sᴛᴀᴛᴜs : ᴠ2.7.1 [sᴛᴀʙʟᴇ]></b>"""
+‣ ʙᴜɪʟᴅ sᴛᴀᴛᴜs : ᴠ2.7.1 [sᴛᴀʙʟᴇ]>"""
         await query.message.edit_text(about_message, disable_web_page_preview=True, parse_mode=ParseMode.HTML)
 
     elif query.data == "help_cmd":
