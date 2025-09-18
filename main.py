@@ -123,10 +123,10 @@ async def start(client, message):
     ]
 
     await message.reply_photo(
-        photo="https://i.postimg.cc/fyrXmg6S/file-000000004e7461faaef2bd964cbbd408.png",
+        photo="https://i.postimg.cc/fLkdDgs2/file-00000000346461fab560bc2d21951e7f.png",
         caption=(
             f"👋 Hello {message.from_user.mention},\n\n"
-            "👋 Welcome!\n\nThis bot can automatically forward posts from one channel/group to another Channel/group\n\n"
+            "Welcome! To This Bot\nThis bot can automatically forward New posts from one channel to another Channel/group\n\n"
             "⊰•─•─✦✗✦─•◈•─✦✗✦─•─•⊱\n"
             "⚡ Use the buttons below to navigate and get started!"
         ),
