@@ -6,8 +6,8 @@ from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from motor.motor_asyncio import AsyncIOMotorClient
-from pyrogram.enums import ParseMode
-from pyrogram.errors import UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError, FloodWait, UserIsBot#, BotBlocked
+from pyrogram.enums import ParseMode, ChatMemberStatus, ChatType # Import ChatType
+from pyrogram.errors import UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError, FloodWait, UserIsBot # Removed BotBlocked
 
 
 logging.basicConfig(level=logging.INFO)
@@ -80,8 +80,8 @@ async def send_with_retry(client, chat_id, text, parse_mode="html", semaphore=No
                 wait = e.x if hasattr(e, 'x') else getattr(e, 'value', 5)
                 logger.warning(f"FloodWait: sleeping for {wait} seconds before retrying send to {chat_id}")
                 await asyncio.sleep(wait + 1)
-            except (BotBlocked, UserIsBot) as e:
-                logger.info(f"Cannot send message to {chat_id}: {e}")
+            except UserIsBot as e: # Now only catching UserIsBot
+                logger.info(f"Cannot send message to {chat_id}: {e} (User blocked bot or is a bot)")
                 return None
             except Exception as e:
                 logger.exception(f"Failed to send message to {chat_id} on attempt {attempt+1}: {e}")
@@ -223,16 +223,29 @@ async def catch_forwarded(client, message):
     chat = message.forward_from_chat
     try:
         try:
-            # Check bot's status in the forwarded chat
             chat_member = await client.get_chat_member(chat.id, client.me.id)
-            if not chat_member.can_post_messages: # More specific check for admin rights needed for forwarding
-                 return await message.reply_text(f"⚠️ Bot is not an admin with post rights in {chat.title} (ID: <code>{chat.id}</code>). Please promote me.", parse_mode=ParseMode.HTML)
+
+            # Check bot's status and permissions
+            if chat_member.status == ChatMemberStatus.ADMINISTRATOR:
+                if not chat_member.can_post_messages:
+                    return await message.reply_text(f"⚠️ Bot is an admin in {chat.title} (ID: <code>{chat.id}</code>) but does not have 'Post Messages' permission. Please enable it.", parse_mode=ParseMode.HTML)
+            elif chat_member.status == ChatMemberStatus.MEMBER:
+                # Members can post in groups by default, but not in channels.
+                # If it's a channel, members can't post.
+                if chat.type == ChatType.CHANNEL:
+                    return await message.reply_text(f"⚠️ Bot is a member of {chat.title} (ID: <code>{chat.id}</code>) but cannot post in a channel. Please promote me to admin.", parse_mode=ParseMode.HTML)
+            elif chat_member.status == ChatMemberStatus.RESTRICTED:
+                if not chat_member.can_send_messages: # For restricted, check can_send_messages
+                    return await message.reply_text(f"⚠️ Bot is restricted in {chat.title} (ID: <code>{chat.id}</code>) and cannot send messages. Please unrestrict or promote me.", parse_mode=ParseMode.HTML)
+            else: # Banned, Left, Kicked, etc.
+                return await message.reply_text(f"⚠️ Bot's status in {chat.title} (ID: <code>{chat.id}</code>) is {chat_member.status.value}. I need to be an admin or a member with posting rights.", parse_mode=ParseMode.HTML)
+
 
         except UserNotParticipant:
             return await message.reply_text(f"⚠️ Bot is not a member of {chat.title} (ID: <code>{chat.id}</code>). Please add me first.", parse_mode=ParseMode.HTML)
         except ChatAdminRequired:
             # This error typically means the bot needs to be admin to even *see* members in private groups/channels
-            return await message.reply_text(f"⚠️ Bot needs to be admin in {chat.title} (ID: <code>{chat.id}</code>). Please promote me.", parse_mode=ParseMode.HTML)
+            return await message.reply_text(f"⚠️ Bot needs to be admin in {chat.title} (ID: <code>{chat.id}</code>) to check its permissions. Please promote me.", parse_mode=ParseMode.HTML)
         except PeerIdInvalid:
             return await message.reply_text(f"⚠️ Invalid chat ID for {chat.title}.", parse_mode=ParseMode.HTML)
         except RPCError as e:
@@ -383,8 +396,8 @@ async def forward_message(client, message):
                     logger.error(f"Failed to forward message {message.id} from {message.chat.id} to {dest_chat_id} for user {user_id}. Error: {e}")
                     # Only send a specific notification if the error is significant and not just a normal failure
                     # For example, if the bot was removed from the destination chat
-                    if "CHAT_WRITE_FORBIDDEN" in str(e) or "USER_BLOCKED_BOT" in str(e): # Simplified check for common errors
-                        await client.send_message(user_id, f"⚠️ Could not forward to destination (ID: <code>{dest_chat_id}</code> - Name: {dest_chat_id if isinstance(dest_chat_id, str) else 'Unknown'}). Bot might not have access or admin rights anymore. Error: {e}", parse_mode=ParseMode.HTML)
+                    if "CHAT_WRITE_FORBIDDEN" in str(e) or "USER_BLOCKED" in str(e) or "USER_IS_BOT" in str(e): # Updated error checks for notification
+                        await client.send_message(user_id, f"⚠️ Could not forward to destination (ID: <code>{dest_chat_id}</code> - Name: {dest_chat_id if isinstance(dest_chat_id, str) else 'Unknown'}). Bot might not have access or admin rights anymore, or bot was blocked. Error: {e}", parse_mode=ParseMode.HTML)
                 except Exception as inner_e:
                     logger.exception(f"Failed to notify user {user_id} about forwarding error: {inner_e}")
 
@@ -407,10 +420,22 @@ async def startup_checks(client):
                 continue
             checked.add(chat_id)
             try:
-                # Check if bot is a member and has rights to post
                 chat_member = await client.get_chat_member(chat_id, client.me.id)
-                if not chat_member.can_post_messages:
-                    bad_chats.append((chat_id, "Bot is not an admin with 'Post Messages' right."))
+                # Check bot's status and permissions
+                if chat_member.status == ChatMemberStatus.ADMINISTRATOR:
+                    if not chat_member.can_post_messages:
+                        bad_chats.append((chat_id, "Bot is an admin but does not have 'Post Messages' permission."))
+                elif chat_member.status == ChatMemberStatus.MEMBER:
+                    # For channels, being a member is not enough to post
+                    chat_info = await client.get_chat(chat_id) # Need chat info to check type
+                    if chat_info.type == ChatType.CHANNEL:
+                        bad_chats.append((chat_id, "Bot is a member but cannot post in a channel. Needs admin rights."))
+                elif chat_member.status == ChatMemberStatus.RESTRICTED:
+                    if not chat_member.can_send_messages: # For restricted, check can_send_messages
+                        bad_chats.append((chat_id, "Bot is restricted and cannot send messages."))
+                else: # Banned, Left, Kicked, etc.
+                    bad_chats.append((chat_id, f"Bot's status is {chat_member.status.value}. Needs to be admin or a member with posting rights."))
+
             except UserNotParticipant:
                 bad_chats.append((chat_id, "Bot is not a member of this chat."))
             except ChatAdminRequired:
@@ -434,5 +459,5 @@ async def startup_checks(client):
         logger.info("Startup checks passed: bot has access to stored chats.")
 
 # ---------- RUN ----------
-if __name__ == "__main__":
-    app.run()   
+app.start()
+                    
