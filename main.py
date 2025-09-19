@@ -160,27 +160,38 @@ async def start(client, message):
     subscribed = await is_subscribed(client, message.from_user.id, AUTH_CHANNEL)
     if not subscribed:
         try:
-            chat = await bot.get_chat(AUTH_CHANNEL)
-            invite_link = chat.invite_link
-            if not invite_link:
-                # Bot needs to be admin with 'can_invite_users' privilege to export link
-                if await ensure_bot_admin_rights(bot, AUTH_CHANNEL): # This is a partial check, ideally needs can_invite_users
-                    invite_link = await bot.export_chat_invite_link(AUTH_CHANNEL)
+            # bot এর জায়গায় client ব্যবহার করুন
+            chat = await client.get_chat(AUTH_CHANNEL)
+
+            # invite_link নেওয়ার সেফ উপায়
+            if chat.invite_link:
+                invite_link = chat.invite_link
+            else:
+                if await ensure_bot_admin_rights(client, AUTH_CHANNEL):
+                    invite = await client.create_chat_invite_link(AUTH_CHANNEL)
+                    invite_link = invite.invite_link
                 else:
-                    invite_link = "https://t.me/PrimeXBots" # Fallback to a general link if invite link cannot be obtained
-                    await msg.reply_text("⚠️ Bot needs 'Invite Users' privilege in Auth Channel to generate invite link automatically. Using a fallback link.")
+                    invite_link = "https://t.me/PrimeXBots"  # fallback
         except Exception as e:
             logger.error(f"Could not get invite link for AUTH_CHANNEL {AUTH_CHANNEL}: {e}")
-            invite_link = "https://t.me/PrimeXBots" # Fallback if chat itself cannot be accessed
-        
-        btns = [[InlineKeyboardButton(f"✇ Join {chat.title if chat else 'Channel'} ✇", url=invite_link)],
-                [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_check")]]
-        await msg.reply_photo(
+            chat = None
+            invite_link = "https://t.me/PrimeXBots"  # fallback
+
+        btns = [
+            [InlineKeyboardButton(
+                f"✇ Join {chat.title if chat else 'Channel'} ✇",
+                url=invite_link)],
+            [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_check")]
+        ]
+
+        await message.reply_photo(  # msg এর জায়গায় message
             photo="https://i.postimg.cc/xdkd1h4m/IMG-20250715-153124-952.jpg",
-            caption=f"👋 Hello {msg.from_user.mention},\n\nJoin our channel to use the bot.",
+            caption=f"👋 Hello {message.from_user.mention},\n\nJoin our channel to use the bot.",
             reply_markup=InlineKeyboardMarkup(btns)
         )
         return
+
+    # সাবস্ক্রাইবড হলে মূল বাটনগুলো দেখান
     buttons = [
         [
             InlineKeyboardButton("✪ ꜱᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ ✪", url="https://t.me/Prime_Support_group"),
@@ -204,6 +215,7 @@ async def start(client, message):
         ),
         reply_markup=InlineKeyboardMarkup(buttons)
         )
+
 
 @app.on_callback_query()
 async def cb_handler(client, query):
