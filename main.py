@@ -46,6 +46,7 @@ app = Client(
     bot_token=os.environ["BOT_TOKEN"]
 )
 
+AUTH_CHANNEL = int(os.environ.get("AUTH_CHANNEL", "-1002245813234"))
 OWNER_ID = 5926160191  # আপনার Owner আইডি
 
 # In-memory store for states
@@ -105,10 +106,61 @@ async def copy_with_retry(client, chat_id, from_chat_id, message_id, semaphore=N
                 logger.exception(f"Failed to copy message to {chat_id} on attempt {attempt+1}: {e}")
                 await asyncio.sleep(1)
         return None
+
+# 🔹 Helpers
+async def is_subscribed(bot, user_id, channels):
+    if isinstance(channels, int): 
+        channels = [channels]
+    for channel in channels:
+        try:
+            member = await bot.get_chat_member(channel, user_id)
+            # User is considered subscribed if they are a member, administrator, or owner.
+            if member.status in [
+                enums.ChatMemberStatus.MEMBER,
+                enums.ChatMemberStatus.ADMINISTRATOR,
+                enums.ChatMemberStatus.OWNER
+            ]:
+                return True
+        except Exception as e:
+            # If get_chat_member raises an error (e.g., UserNotParticipant), they are not subscribed.
+            logger.debug(f"Subscription check failed for user {user_id} in channel {channel}: {e}")
+            pass # Continue to check other channels if multiple are provided, though in this case it's usually one auth channel.
+    return False
+
+async def is_admin(bot, user_id: int, chat_id: int):
+    try:
+        member = await bot.get_chat_member(chat_id, user_id)
+        return member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]
+    except Exception as e:
+        logger.error
         
 # ---------- START ----------
 @app.on_message(filters.command("start") & filters.private)
 async def start(client, message):
+    subscribed = await is_subscribed(client, message.from_user.id, AUTH_CHANNEL)
+    if not subscribed:
+        try:
+            chat = await bot.get_chat(AUTH_CHANNEL)
+            invite_link = chat.invite_link
+            if not invite_link:
+                # Bot needs to be admin with 'can_invite_users' privilege to export link
+                if await ensure_bot_admin_rights(bot, AUTH_CHANNEL): # This is a partial check, ideally needs can_invite_users
+                    invite_link = await bot.export_chat_invite_link(AUTH_CHANNEL)
+                else:
+                    invite_link = "https://t.me/PrimeXBots" # Fallback to a general link if invite link cannot be obtained
+                    await msg.reply_text("⚠️ Bot needs 'Invite Users' privilege in Auth Channel to generate invite link automatically. Using a fallback link.")
+        except Exception as e:
+            logger.error(f"Could not get invite link for AUTH_CHANNEL {AUTH_CHANNEL}: {e}")
+            invite_link = "https://t.me/PrimeXBots" # Fallback if chat itself cannot be accessed
+        
+        btns = [[InlineKeyboardButton(f"✇ Join {chat.title if chat else 'Channel'} ✇", url=invite_link)],
+                [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_check")]]
+        await msg.reply_photo(
+            photo="https://i.postimg.cc/xdkd1h4m/IMG-20250715-153124-952.jpg",
+            caption=f"👋 Hello {msg.from_user.mention},\n\nJoin our channel to use the bot.",
+            reply_markup=InlineKeyboardMarkup(btns)
+        )
+        return
     buttons = [
         [
             InlineKeyboardButton("✪ ꜱᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ ✪", url="https://t.me/Prime_Support_group"),
