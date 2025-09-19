@@ -34,7 +34,6 @@ from pyrogram.errors import (
     PasswordRequired,
     PhoneNumberInvalid,
     FloodWait,
-    BotBlocked,
     UserIsBot,
     SessionPasswordNeeded,
     PhoneCodeInvalid,
