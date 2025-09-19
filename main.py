@@ -30,9 +30,15 @@ from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from pyrogram.enums import ParseMode
-from pyrogram.errors import (UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError,
-                             FloodWait, BotBlocked, UserIsBot, SessionPasswordNeeded, PhoneCodeInvalid,
-                             PasswordRequired, PhoneNumberInvalid)
+from pyrogram.errors import (
+    PasswordRequired,
+    PhoneNumberInvalid,
+    FloodWait,
+    BotBlocked,
+    UserIsBot,
+    SessionPasswordNeeded,
+    PhoneCodeInvalid,
+)
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # ---------- Logging ----------
