@@ -9,7 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram.enums import ParseMode
 from pyrogram.errors import (
     UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError,
-    FloodWait, BotBlocked, UserIsBot, SessionPasswordNeeded, PhoneCodeInvalid,
+    FloodWait, UserIsBot, SessionPasswordNeeded, PhoneCodeInvalid,
     PasswordRequired, PhoneNumberInvalid, AuthKeyUnregistered
 )
 
@@ -586,4 +586,146 @@ async def state_handler(client, message):
             user_states.pop(user_id, None)
             user_temp_data.pop(user_id, None)
 
-            await initialize_userbot_for_user(user_id, session
+            await initialize_userbot_for_user(user_id, session_string)
+
+        except PasswordRequired:
+            await userbot_client.disconnect()
+            await message.reply_text("⚠️ Two-factor authentication (2FA) is enabled. Please restart /add_session and provide your password when prompted.")
+            user_states.pop(user_id, None)
+            user_temp_data.pop(user_id, None)
+        except AuthKeyUnregistered:
+            await userbot_client.disconnect()
+            await message.reply_text("⚠️ This session is no longer valid. Please restart /add_session to generate a new one.")
+            user_states.pop(user_id, None)
+            user_temp_data.pop(user_id, None)
+        except Exception as e:
+            logger.exception(f"Error in waiting_for_2fa state for user {user_id}: {e}")
+            await userbot_client.disconnect()
+            await message.reply_text(f"⚠️ An unexpected error occurred during 2FA: {e}")
+            user_states.pop(user_id, None)
+            user_temp_data.pop(user_id, None)
+
+    # If the message is not a forwarded message and no state is active,
+    # it might be a regular text message not handled by other filters.
+    # In a real bot, you might want to add a default response here.
+    # For now, we'll just log it or ignore.
+    else:
+        # If no specific state, check if it's a command not caught, or just ignore.
+        if not message.text.startswith('/') and current_state not in ["waiting_for_source_forward", "waiting_for_destiny_forward", "waiting_for_private_source_forward"]:
+            logger.debug(f"Unhandled private message from {user_id}: {message.text}")
+            # await message.reply_text("I'm not sure how to handle that. Use /help to see available commands.")
+        elif current_state:
+            # If there's a state but it's not handled by the specific state handlers above,
+            # it means the input was unexpected for that state.
+            await message.reply_text("⚠️ Unexpected input for the current operation. Please try again or use /cancel to reset.")
+            # For simplicity, we'll pop the state, but you might want a /cancel command
+            user_states.pop(user_id, None)
+            user_temp_data.pop(user_id, None)
+
+
+# ---------- USERBOT CLIENT MANAGEMENT & PRIVATE SOURCE FORWARDER ----------
+async def initialize_userbot_for_user(user_id, session_string):
+    """
+    Initializes a userbot client for a given user_id using their session string
+    and sets up a message handler to forward from private sources.
+    """
+    logger.info(f"Initializing userbot for user {user_id}")
+
+    # If an old userbot client exists for this user, stop it first
+    if user_id in active_userbots and active_userbots[user_id].is_connected:
+        try:
+            await active_userbots[user_id].stop()
+            logger.info(f"Stopped existing userbot for user {user_id}")
+        except Exception as e:
+            logger.warning(f"Error stopping existing userbot for {user_id}: {e}")
+
+    try:
+        # Create a new client instance for the userbot
+        user_client = Client(
+            name=f"userbot_session_{user_id}",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            session_string=session_string,
+            no_updates=False # We want to receive updates
+        )
+
+        # Define a message handler specific to this userbot
+        @user_client.on_message(filters.channel)
+        async def userbot_private_forwarder(ub_client, message):
+            user_data = await get_user_data(user_id)
+            private_sources = user_data.get("private_sources", [])
+            destinations = user_data.get("destination_chats", [])
+
+            if message.chat.id in private_sources:
+                logger.info(f"Userbot {user_id} detected message in private source {message.chat.id}")
+                for dest_chat_id in destinations:
+                    try:
+                        # Use the main bot client (app) to copy the message to destinations
+                        # as the userbot might not be admin in public destination channels.
+                        # The main bot 'app' is guaranteed to be admin there if set via /set_destiny.
+                        await copy_with_retry(app, dest_chat_id, message.chat.id, message.id)
+                        logger.debug(f"Forwarded message {message.id} from private source {message.chat.id} to {dest_chat_id} for user {user_id}")
+                    except Exception as e:
+                        logger.error(f"Userbot failed to copy message {message.id} from {message.chat.id} to {dest_chat_id} for user {user_id}: {e}")
+                        # Inform the user via the main bot if a destination fails
+                        await send_with_retry(app, user_id,
+                                              f"⚠️ Failed to forward a message from your private source <b>{message.chat.title}</b> "
+                                              f"to your destination (ID: <code>{dest_chat_id}</code>). Error: {e}")
+
+        await user_client.start()
+        active_userbots[user_id] = user_client
+        logger.info(f"Userbot for user {user_id} started successfully.")
+
+    except Exception as e:
+        logger.exception(f"Failed to start userbot for user {user_id}: {e}")
+        # Clear session string if it's invalid
+        await save_session_string(user_id, None)
+        if user_id in active_userbots:
+            try:
+                await active_userbots[user_id].stop()
+            except Exception:
+                pass
+            del active_userbots[user_id]
+        await send_with_retry(app, user_id,
+                              f"⚠️ Failed to initialize your userbot session. Please try /add_session again. Error: {e}")
+
+
+# ---------- ON STARTUP: LOAD ALL EXISTING USERBOT SESSIONS ----------
+@app.on_raw_update()
+async def initial_userbot_loader(client, update, users, chats):
+    # This raw update handler runs once when the bot first connects and receives an update.
+    # We use it to load all existing userbot sessions from the database.
+    if not hasattr(client, "_userbots_loaded"): # Ensure it runs only once
+        client._userbots_loaded = True
+        logger.info("Loading existing userbot sessions from database...")
+        async for user_data in users_collection.find({"session_string": {"$ne": None}}):
+            user_id = user_data["_id"]
+            session_string = user_data["session_string"]
+            # Start the userbot in a background task
+            asyncio.create_task(initialize_userbot_for_user(user_id, session_string))
+        logger.info("Finished initiating existing userbot sessions.")
+
+
+# ---------- MAIN FUNCTION TO RUN THE BOT ----------
+async def main():
+    logger.info("Starting AutoForward Bot...")
+    await app.start()
+    logger.info("Bot started successfully!")
+
+    # Keep the bot running
+    await idle()
+
+    logger.info("Stopping bot...")
+    # Stop all active userbots before the main bot stops
+    for user_id, ub_client in list(active_userbots.items()):
+        if ub_client.is_connected:
+            try:
+                await ub_client.stop()
+                logger.info(f"Stopped userbot for user {user_id}")
+            except Exception as e:
+                logger.warning(f"Error stopping userbot for {user_id}: {e}")
+    await app.stop()
+    logger.info("Bot stopped.")
+
+if __name__ == "__main__":
+    app.run(main()) # Changed to app.run(main()) for Pyrogram v2
