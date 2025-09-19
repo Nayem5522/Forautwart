@@ -241,6 +241,25 @@ async def add_session_command(client, message):
     user_states[message.from_user.id] = "waiting_for_phone"
     await message.reply_text("📱 আপনার ফোন নম্বরটি (দেশ কোড সহ) পাঠান। যেমন +8801XXXXXXXXX")
   
+# ✅ নতুন /add_private_source কমান্ড
+@app.on_message(filters.command("add_private_source") & filters.private)
+async def add_private_source_command(client, message):
+    user_id = message.from_user.id
+    session_string = await get_session_string(user_id)
+
+    if not session_string:
+        return await message.reply_text(
+            "⚠️ আপনার private sources ব্যবহার করার জন্য আগে /add_session ব্যবহার করে session যোগ করুন।",
+            parse_mode=ParseMode.HTML
+        )
+
+    # পরবর্তী forwarded message এর জন্য state সেট করা
+    user_states[user_id] = "waiting_for_private_source_forward"
+    await message.reply_text(
+        "🔒 Private source channel যোগ করতে, একটি চ্যানেল/গ্রুপ থেকে একটি message forward করুন।\n"
+        "⚠️ Bot অবশ্যই সেই চ্যানেল/গ্রুপে admin হতে হবে।",
+        parse_mode=ParseMode.HTML
+    )
 
 # ---------- SET SOURCE / DESTINY ----------
 @app.on_message(filters.command("set_source") & filters.private)
