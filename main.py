@@ -707,25 +707,4 @@ async def initial_userbot_loader(client, update, users, chats):
 
 
 # ---------- MAIN FUNCTION TO RUN THE BOT ----------
-async def main():
-    logger.info("Starting AutoForward Bot...")
-    await app.start()
-    logger.info("Bot started successfully!")
-
-    # Keep the bot running
-    await idle()
-
-    logger.info("Stopping bot...")
-    # Stop all active userbots before the main bot stops
-    for user_id, ub_client in list(active_userbots.items()):
-        if ub_client.is_connected:
-            try:
-                await ub_client.stop()
-                logger.info(f"Stopped userbot for user {user_id}")
-            except Exception as e:
-                logger.warning(f"Error stopping userbot for {user_id}: {e}")
-    await app.stop()
-    logger.info("Bot stopped.")
-
-if __name__ == "__main__":
-    app.run(main()) # Changed to app.run(main()) for Pyrogram v2
+app.run() 
