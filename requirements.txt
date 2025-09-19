@@ -1,5 +1,5 @@
 pyrogram==2.0.106
-tgcrypto==1.2.5
-Flask==3.0.0
-motor
-pyromod
+TgCrypto==1.2.5
+motor==3.3.2
+pymongo==4.8.0
+Flask==3.0.3
