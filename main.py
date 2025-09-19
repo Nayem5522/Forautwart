@@ -4,7 +4,7 @@ import asyncio
 import logging
 from flask import Flask
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram.enums import ParseMode
 #from pyrogram.errors import UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError, FloodWait, BotBlocked, UserIsBot
@@ -133,6 +133,26 @@ async def is_admin(bot, user_id: int, chat_id: int):
         return member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]
     except Exception as e:
         logger.error
+
+async def ensure_bot_admin_rights(bot: Client, channel_id: int) -> bool:
+    try:
+        me = await bot.get_me()
+        member = await bot.get_chat_member(channel_id, me.id)
+        if member.status == enums.ChatMemberStatus.OWNER:
+            return True
+        if member.status == enums.ChatMemberStatus.ADMINISTRATOR:
+            # Check for specific necessary privileges
+            if hasattr(member, "privileges") and member.privileges:
+                # We need to post messages and ideally manage messages for reactions
+                return member.privileges.can_post_messages and member.privileges.can_edit_messages
+            # Fallback for older Pyrogram versions or if privileges not directly available
+            if hasattr(member, "can_post_messages") and hasattr(member, "can_edit_messages"):
+                return member.can_post_messages and member.can_edit_messages
+        return False
+    except Exception as e:
+        logger.error(f"Bot admin check failed for channel {channel_id}: {e}")
+        return False
+        
         
 # ---------- START ----------
 @app.on_message(filters.command("start") & filters.private)
@@ -437,6 +457,18 @@ async def broadcast_cmd(client, message):
             count += 1
 
     await message.reply_text(f"✅ Broadcast sent to {count} users. Failed: {failed}")
+
+# 🟢 Subscription refresh
+@app.on_callback_query(filters.regex("refresh_check"))
+async def refresh_callback(bot, cq: CallbackQuery):
+    subscribed = await is_subscribed(bot, cq.from_user.id, AUTH_CHANNEL)
+    if subscribed:
+        await cq.message.delete()
+        # Optionally, send the start message again
+        await start_handler(bot, cq.message) # Re-trigger start handler
+    else:
+        await cq.answer("❌ You have not joined yet. Please join first, then refresh.", show_alert=True)
+
 
 # ---------- FORWARDER ----------
 @app.on_message(filters.channel)
