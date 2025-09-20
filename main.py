@@ -291,10 +291,6 @@ async def cb_handler(client, query):
         await query.message.edit_text("✅ Source removed.", parse_mode=ParseMode.HTML)
 
 #about_cmd
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-app = Client("my_bot")
 
 # 🔹 Source Prime callback
 @app.on_callback_query(filters.regex("^source_prime$"))
