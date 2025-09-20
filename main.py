@@ -107,7 +107,7 @@ async def copy_with_retry(client, chat_id, from_chat_id, message_id, semaphore=N
                 await asyncio.sleep(1)
         return None
 
-async def get_subscription_buttons(bot, user_id, channels):
+async def get_subscription_buttons11(bot, user_id, channels):
     btn = []
     for cid in channels:
         chat = await bot.get_chat(int(cid))
@@ -118,33 +118,44 @@ async def get_subscription_buttons(bot, user_id, channels):
             btn.append([InlineKeyboardButton(f"✇ Join {chat.title} ✇", url=chat.invite_link)])
     return btn  # খালি হলে সব চ্যানেলে আছে
     
-        
+
+async def is_subscribed(bot, query, channel):
+    btn = []
+    for id in channel:
+        chat = await bot.get_chat(int(id))
+        try:
+            await bot.get_chat_member(id, query.from_user.id)
+        except UserNotParticipant:
+            btn.append([InlineKeyboardButton(f"✇ Join {chat.title} ✇", url=chat.invite_link)]) #✇ ᴊᴏɪɴ ᴏᴜʀ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ ✇
+        except Exception as e:
+            pass
+    return btn
+            
         
 # ---------- START ----------
 @app.on_message(filters.command("start") & filters.private)
 async def start(client, message):
     if AUTH_CHANNEL:
         try:
-            btn = await get_subscription_buttons(client, message.from_user.id, AUTH_CHANNEL)
+            btn = await is_subscribed(client, message, AUTH_CHANNEL)
+            if btn:
+                username = (await client.get_me()).username
+                if len(message.command) > 1:
+                    btn.append([InlineKeyboardButton("♻️ ʀᴇғʀᴇsʜ ♻️", url=f"https://t.me/{username}?start={message.command[1]}")])
+                else:
+                    btn.append([InlineKeyboardButton("♻️ ʀᴇғʀᴇsʜ ♻️", callback_data="refresh_check")])
 
-            username = (await client.get_me()).username
-            # রিফ্রেশ বাটন যোগ
-            if len(message.command) > 1:
-                btn.append([InlineKeyboardButton("♻️ ʀᴇғʀᴇsʜ ♻️", url=f"https://t.me/{username}?start={message.command[1]}")])
-            else:
-                btn.append([InlineKeyboardButton("♻️ ʀᴇғʀᴇsʜ ♻️", callback_data="refresh_check")])
-
-            await message.reply_photo(
-                photo="https://i.postimg.cc/xdkd1h4m/IMG-20250715-153124-952.jpg",  # আপনার ছবি লিঙ্ক
-                caption=(  
-                    f"<b>👋 Hello {message.from_user.mention},\n\n"
-                    "ɪꜰ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ᴜꜱᴇ ᴍᴇ, ʏᴏᴜ ᴍᴜꜱᴛ ꜰɪʀꜱᴛ ᴊᴏɪɴ ᴏᴜʀ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ. "
-                    "ᴄʟɪᴄᴋ ᴏɴ \"✇ ᴊᴏɪɴ ᴏᴜʀ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ ✇\" ʙᴜᴛᴛᴏɴ. "
-                    "ᴛʜᴇɴ ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ \"ʀᴇǫᴜᴇꜱᴛ ᴛᴏ ᴊᴏɪɴ\" ʙᴜᴛᴛᴏɴ. "
-                    "ᴀꜰᴛᴇʀ ᴊᴏɪɴɪɴɢ, ᴄʟɪᴄᴋ ᴏɴ \"ʀᴇғʀᴇsʜ\" ʙᴜᴛᴛᴏɴ.</b>"
-                ),
-                reply_markup=InlineKeyboardMarkup(btn)
-            )
+                await message.reply_photo(
+                    photo="https://i.postimg.cc/xdkd1h4m/IMG-20250715-153124-952.jpg",  # Replace with your image link
+                    caption=(  
+                        f"<b>👋 Hello {message.from_user.mention},\n\n"  
+                        "ɪꜰ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ᴜꜱᴇ ᴍᴇ, ʏᴏᴜ ᴍᴜꜱᴛ ꜰɪʀꜱᴛ ᴊᴏɪɴ ᴏᴜʀ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ. "  
+                        "ᴄʟɪᴄᴋ ᴏɴ \"✇ ᴊᴏɪɴ ᴏᴜʀ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ ✇\" ʙᴜᴛᴛᴏɴ.ᴛʜᴇɴ ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ \"ʀᴇǫᴜᴇꜱᴛ ᴛᴏ ᴊᴏɪɴ\" ʙᴜᴛᴛᴏɴ. "  
+                        "ᴀꜰᴛᴇʀ ᴊᴏɪɴɪɴɢ, ᴄʟɪᴄᴋ ᴏɴ \"ʀᴇғʀᴇsʜ\" ʙᴜᴛᴛᴏɴ.</b>"  
+                    ),  
+                    reply_markup=InlineKeyboardMarkup(btn)
+                )
+                return
         except Exception as e:
             print(e)
     buttons = [
@@ -164,38 +175,12 @@ async def start(client, message):
         photo="https://i.postimg.cc/fLkdDgs2/file-00000000346461fab560bc2d21951e7f.png",
         caption=(
             f"👋 Hello {message.from_user.mention},\n\n"
-            "Welcome! To This Bot\nThis bot can automatically forward New posts from one channel to another Channel/group\n\n"
+            "Welcome To This Bot !\nThis bot can automatically forward New posts from one channel to another Channel/group\n\n"
             "⊰•─•─✦✗✦─•◈•─✦✗✦─•─•⊱\n"
             "⚡ Use the buttons below to navigate and get started!"
         ),
         reply_markup=InlineKeyboardMarkup(buttons)
         )
-
-#about_cmd
-@Client.on_callback_query(filters.regex("source_prime"))
-async def source_info_callback(client, callback_query):
-    try:
-        await callback_query.message.reply_photo(
-            photo="https://i.postimg.cc/hvFZ93Ct/file-000000004188623081269b2440872960.png",
-            caption=(
-                f"<b>👋 Hello {callback_query.from_user.mention},\n\n"
-                "ɴᴏᴛᴇ :\n"
-                "⚠️ ᴛʜɪꜱ ʙᴏᴛ ɪꜱ ᴀɴ ᴘʀɪᴠᴀᴛᴇ ꜱᴏᴜʀᴄᴇ ᴘʀᴏᴊᴇᴄᴛ\n\n"
-                "ᴛʜɪs ʙᴏᴛ ʜᴀs ʟᴀsᴛᴇsᴛ ᴀɴᴅ ᴀᴅᴠᴀɴᴄᴇᴅ ꜰᴇᴀᴛᴜʀᴇs⚡️\n"
-                "▸ ᴅᴏɴ'ᴛ ᴡᴏʀʀʏ\n"
-                "▸ ɪꜰ ʏᴏᴜ ᴡᴀɴᴛ ʟɪᴋᴇ ᴛʜɪꜱ ʙᴏᴛ ᴄᴏɴᴛᴀᴄᴛ ᴍᴇ..!\n"
-                "▸ ɪ ᴡɪʟʟ ᴄʀᴇᴀᴛᴇ ᴀ ʙᴏᴛ ꜰᴏʀ ʏᴏᴜ\n"
-                "⇒ ᴄᴏɴᴛᴀᴄᴛ ᴍᴇ - ♚ ᴀᴅᴍɪɴ ♚.</b>"
-            ),
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("♚ ᴀᴅᴍɪɴ ♚", url="https://t.me/Prime_Admin_Support_ProBot")],
-                [InlineKeyboardButton("• ᴄʟᴏsᴇ •", callback_data="close")]
-            ])
-        )
-    except Exception as e:
-        print(e)  # error হলে কনসোলে প্রিন্ট হবে
-    finally:
-        await callback_query.answer()
 
 @app.on_callback_query()
 async def cb_handler(client, query):
@@ -302,6 +287,31 @@ async def cb_handler(client, query):
         await update_user_data(user_id, "source_chat", None)
         await query.message.edit_text("✅ Source removed.", parse_mode=ParseMode.HTML)
 
+#about_cmd
+@Client.on_callback_query(filters.regex("source_prime"))
+async def source_info_callback(client, callback_query):
+    try:
+        await callback_query.message.reply_photo(
+            photo="https://i.postimg.cc/hvFZ93Ct/file-000000004188623081269b2440872960.png",
+            caption=(
+                f"<b>👋 Hello Dear 👋,\n\n"
+                "ɴᴏᴛᴇ :\n"
+                "⚠️ ᴛʜɪꜱ ʙᴏᴛ ɪꜱ ᴀɴ ᴘʀɪᴠᴀᴛᴇ ꜱᴏᴜʀᴄᴇ ᴘʀᴏᴊᴇᴄᴛ\n\n"
+                "ᴛʜɪs ʙᴏᴛ ʜᴀs ʟᴀsᴛᴇsᴛ ᴀɴᴅ ᴀᴅᴠᴀɴᴄᴇᴅ ꜰᴇᴀᴛᴜʀᴇs⚡️\n"
+                "▸ ᴅᴏɴ'ᴛ ᴡᴏʀʀʏ\n"
+                "▸ ɪꜰ ʏᴏᴜ ᴡᴀɴᴛ ʟɪᴋᴇ ᴛʜɪꜱ ʙᴏᴛ ᴄᴏɴᴛᴀᴄᴛ ᴍᴇ..!\n"
+                "▸ ɪ ᴡɪʟʟ ᴄʀᴇᴀᴛᴇ ᴀ ʙᴏᴛ ꜰᴏʀ ʏᴏᴜ\n"
+                "⇒ ᴄᴏɴᴛᴀᴄᴛ ᴍᴇ - ♚ ᴀᴅᴍɪɴ ♚.</b>"
+            ),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("♚ ᴀᴅᴍɪɴ ♚", url="https://t.me/Prime_Admin_Support_ProBot")],
+                [InlineKeyboardButton("• ᴄʟᴏsᴇ •", callback_data="close")]
+            ])
+        )
+    except Exception as e:
+        print(e)  # error হলে কনসোলে প্রিন্ট হবে
+    finally:
+        await callback_query.answer()
 # ---------- SET SOURCE / DESTINY ----------
 @app.on_message(filters.command("set_source") & filters.private)
 async def set_source(client, message):
@@ -453,7 +463,7 @@ async def broadcast_cmd(client, message):
 # 🟢 Subscription refresh
 @Client.on_callback_query(filters.regex("refresh_check"))
 async def refresh_callback(client, query):
-    btn = await get_subscription_buttons(client, query.from_user.id, AUTH_CHANNEL)
+    btn = await is_subscribed(client, query.from_user.id, AUTH_CHANNEL)
     if not btn:
         try:
             await query.message.delete()
