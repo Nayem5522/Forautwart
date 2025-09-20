@@ -376,17 +376,30 @@ async def set_destiny(client, message):
 async def catch_forwarded(client, message):
     user_id = message.from_user.id
     if not message.forward_from_chat:
-        return await message.reply_text("⚠️ Forwarded message must be from a channel/group.", parse_mode=ParseMode.HTML)
+        return await message.reply_text(
+            "⚠️ Forwarded message must be from a channel/group.",
+            parse_mode=ParseMode.HTML
+        )
+
     chat = message.forward_from_chat
     try:
         try:
             await client.get_chat_member(chat.id, client.me.id)
         except UserNotParticipant:
-            return await message.reply_text(f"⚠️ Bot is not a member of {chat.title} (ID: <code>{chat.id}</code>). Please add me first.", parse_mode=ParseMode.HTML)
+            return await message.reply_text(
+                f"⚠️ Bot is not a member of {chat.title} (ID: <code>{chat.id}</code>). Please add me first.",
+                parse_mode=ParseMode.HTML
+            )
         except ChatAdminRequired:
-            return await message.reply_text(f"⚠️ Bot needs to be admin in {chat.title} (ID: <code>{chat.id}</code>). Please promote me.", parse_mode=ParseMode.HTML)
+            return await message.reply_text(
+                f"⚠️ Bot needs to be admin in {chat.title} (ID: <code>{chat.id}</code>). Please promote me.",
+                parse_mode=ParseMode.HTML
+            )
         except PeerIdInvalid:
-            return await message.reply_text(f"⚠️ Invalid chat ID for {chat.title}.", parse_mode=ParseMode.HTML)
+            return await message.reply_text(
+                f"⚠️ Invalid chat ID for {chat.title}.",
+                parse_mode=ParseMode.HTML
+            )
         except RPCError as e:
             return await message.reply_text(f"⚠️ Telegram API error: {e}", parse_mode=ParseMode.HTML)
 
@@ -394,19 +407,25 @@ async def catch_forwarded(client, message):
 
         if user_id in waiting_for_destiny:
             user_data = await get_user_data(user_id)
-            if chat.id not in user_data["destination_chats"]:
+
+            # 🔹 এখানে ফিক্স: get() ব্যবহার করা হয়েছে
+            dest_list = user_data.get("destination_chats", [])
+
+            if chat.id not in dest_list:
                 await add_destination(user_id, chat.id)
                 await message.reply_text(f"✅ Destination set: {chat_info.title}", parse_mode=ParseMode.HTML)
             else:
                 await message.reply_text(f"ℹ️ This destination is already added: {chat_info.title}", parse_mode=ParseMode.HTML)
+
             waiting_for_destiny.discard(user_id)
         else:
             await update_user_data(user_id, "source_chat", chat.id)
-            await message.reply_text(f"✅ Source channel set: {chat_info.title}", parse_mode=ParseMode.HTML)
+            await message.reply_text(f"✅ Source Channel Set: {chat_info.title}", parse_mode=ParseMode.HTML)
 
     except Exception as e:
         waiting_for_destiny.discard(user_id)
         await message.reply_text(f"⚠️ Error: {e}", parse_mode=ParseMode.HTML)
+
 
 # ---------- SHOW DESTINY LIST ----------
 async def show_destiny_list(client, message, edit_message=False, custom_text=None):
