@@ -146,7 +146,7 @@ async def start(client, message):
                 if len(message.command) > 1:
                     btn.append([InlineKeyboardButton("♻️ ʀᴇғʀᴇsʜ ♻️", url=f"https://t.me/{username}?start={message.command[1]}")])
                 else:
-                    btn.append([InlineKeyboardButton("♻️ ʀᴇғʀᴇsʜ ♻️", callback_data="refresh_check")])
+                    btn.append([InlineKeyboardButton("♻️ ʀᴇғʀᴇsʜ ♻️", url=f"https://t.me/{username}?start=true")])
 
                 await message.reply_photo(
                     photo="https://i.postimg.cc/xdkd1h4m/IMG-20250715-153124-952.jpg",  # Replace with your image link
@@ -291,14 +291,16 @@ async def cb_handler(client, query):
         await query.message.edit_text("✅ Source removed.", parse_mode=ParseMode.HTML)
 
 #about_cmd
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-@Client.on_callback_query(filters.regex("^source_prime$"))
+app = Client("my_bot")
+
+# 🔹 Source Prime callback
+@app.on_callback_query(filters.regex("^source_prime$"))
 async def source_info_callback(client, callback_query):
     try:
-        # চাইলে আগের মেসেজ ডিলিট করতে পারেন
-        # await callback_query.message.delete()
-
-        await client.send_photo(           # reply_photo না নিয়ে send_photo নিলাম
+        await client.send_photo(
             chat_id=callback_query.message.chat.id,
             photo="https://i.postimg.cc/hvFZ93Ct/file-000000004188623081269b2440872960.png",
             caption=(
@@ -311,13 +313,24 @@ async def source_info_callback(client, callback_query):
             ),
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("♚ ᴀᴅᴍɪɴ ♚", url="https://t.me/Prime_Admin_Support_ProBot")],
-                [InlineKeyboardButton("• ᴄʟᴏsᴇ •", callback_data="close")]
+                [InlineKeyboardButton("• ᴄʟᴏsᴇ •", callback_data="source_close")]
             ])
         )
     except Exception as e:
-        print(e)
+        print("source_prime error:", e)
     finally:
         await callback_query.answer()
+
+# 🔹 নতুন close হ্যান্ডলার (source_close)
+@app.on_callback_query(filters.regex("^source_close$"))
+async def source_close_handler(client, callback_query):
+    try:
+        await callback_query.message.delete()
+    except Exception:
+        await callback_query.answer("⚠️ Cannot delete message.", show_alert=True)
+    else:
+        await callback_query.answer() 
+
         
 # ---------- SET SOURCE / DESTINY ----------
 @app.on_message(filters.command("set_source") & filters.private)
