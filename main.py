@@ -107,91 +107,46 @@ async def copy_with_retry(client, chat_id, from_chat_id, message_id, semaphore=N
                 await asyncio.sleep(1)
         return None
 
-# 🔹 Helpers
-async def is_subscribed(bot, user_id, channels):
-    if isinstance(channels, int): 
-        channels = [channels]
-    for channel in channels:
+async def get_subscription_buttons(bot, user_id, channels):
+    btn = []
+    for cid in channels:
+        chat = await bot.get_chat(int(cid))
         try:
-            member = await bot.get_chat_member(channel, user_id)
-            # User is considered subscribed if they are a member, administrator, or owner.
-            if member.status in [
-                enums.ChatMemberStatus.MEMBER,
-                enums.ChatMemberStatus.ADMINISTRATOR,
-                enums.ChatMemberStatus.OWNER
-            ]:
-                return True
-        except Exception as e:
-            # If get_chat_member raises an error (e.g., UserNotParticipant), they are not subscribed.
-            logger.debug(f"Subscription check failed for user {user_id} in channel {channel}: {e}")
-            pass # Continue to check other channels if multiple are provided, though in this case it's usually one auth channel.
-    return False
-
-async def is_admin(bot, user_id: int, chat_id: int):
-    try:
-        member = await bot.get_chat_member(chat_id, user_id)
-        return member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]
-    except Exception as e:
-        logger.error
-
-async def ensure_bot_admin_rights(bot: Client, channel_id: int) -> bool:
-    try:
-        me = await bot.get_me()
-        member = await bot.get_chat_member(channel_id, me.id)
-        if member.status == enums.ChatMemberStatus.OWNER:
-            return True
-        if member.status == enums.ChatMemberStatus.ADMINISTRATOR:
-            # Check for specific necessary privileges
-            if hasattr(member, "privileges") and member.privileges:
-                # We need to post messages and ideally manage messages for reactions
-                return member.privileges.can_post_messages and member.privileges.can_edit_messages
-            # Fallback for older Pyrogram versions or if privileges not directly available
-            if hasattr(member, "can_post_messages") and hasattr(member, "can_edit_messages"):
-                return member.can_post_messages and member.can_edit_messages
-        return False
-    except Exception as e:
-        logger.error(f"Bot admin check failed for channel {channel_id}: {e}")
-        return False
+            await bot.get_chat_member(cid, user_id)
+        except UserNotParticipant:
+            # যদি ব্যবহারকারী চ্যানেলে না থাকে → Join বাটন
+            btn.append([InlineKeyboardButton(f"✇ Join {chat.title} ✇", url=chat.invite_link)])
+    return btn  # খালি হলে সব চ্যানেলে আছে
+    
         
         
 # ---------- START ----------
 @app.on_message(filters.command("start") & filters.private)
 async def start(client, message):
-    subscribed = await is_subscribed(client, message.from_user.id, AUTH_CHANNEL)
-    if not subscribed:
+    if AUTH_CHANNEL:
         try:
-            # bot এর জায়গায় client ব্যবহার করুন
-            chat = await client.get_chat(AUTH_CHANNEL)
+            btn = await get_subscription_buttons(client, message.from_user.id, AUTH_CHANNEL)
 
-            # invite_link নেওয়ার সেফ উপায়
-            if chat.invite_link:
-                invite_link = chat.invite_link
+            username = (await client.get_me()).username
+            # রিফ্রেশ বাটন যোগ
+            if len(message.command) > 1:
+                btn.append([InlineKeyboardButton("♻️ ʀᴇғʀᴇsʜ ♻️", url=f"https://t.me/{username}?start={message.command[1]}")])
             else:
-                if await ensure_bot_admin_rights(client, AUTH_CHANNEL):
-                    invite = await client.create_chat_invite_link(AUTH_CHANNEL)
-                    invite_link = invite.invite_link
-                else:
-                    invite_link = "https://t.me/PrimeXBots"  # fallback
+                btn.append([InlineKeyboardButton("♻️ ʀᴇғʀᴇsʜ ♻️", callback_data="refresh_check")])
+
+            await message.reply_photo(
+                photo="https://i.postimg.cc/xdkd1h4m/IMG-20250715-153124-952.jpg",  # আপনার ছবি লিঙ্ক
+                caption=(  
+                    f"<b>👋 Hello {message.from_user.mention},\n\n"
+                    "ɪꜰ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ᴜꜱᴇ ᴍᴇ, ʏᴏᴜ ᴍᴜꜱᴛ ꜰɪʀꜱᴛ ᴊᴏɪɴ ᴏᴜʀ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ. "
+                    "ᴄʟɪᴄᴋ ᴏɴ \"✇ ᴊᴏɪɴ ᴏᴜʀ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ ✇\" ʙᴜᴛᴛᴏɴ. "
+                    "ᴛʜᴇɴ ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ \"ʀᴇǫᴜᴇꜱᴛ ᴛᴏ ᴊᴏɪɴ\" ʙᴜᴛᴛᴏɴ. "
+                    "ᴀꜰᴛᴇʀ ᴊᴏɪɴɪɴɢ, ᴄʟɪᴄᴋ ᴏɴ \"ʀᴇғʀᴇsʜ\" ʙᴜᴛᴛᴏɴ.</b>"
+                ),
+                reply_markup=InlineKeyboardMarkup(btn)
+            )
         except Exception as e:
-            logger.error(f"Could not get invite link for AUTH_CHANNEL {AUTH_CHANNEL}: {e}")
-            chat = None
-            invite_link = "https://t.me/PrimeXBots"  # fallback
-
-        btns = [
-            [InlineKeyboardButton(
-                f"✇ Join {chat.title if chat else 'Channel'} ✇",
-                url=invite_link)],
-            [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_check")]
-        ]
-
-        await message.reply_photo(  # msg এর জায়গায় message
-            photo="https://i.postimg.cc/xdkd1h4m/IMG-20250715-153124-952.jpg",
-            caption=f"👋 Hello {message.from_user.mention},\n\nJoin our channel to use the bot.",
-            reply_markup=InlineKeyboardMarkup(btns)
-        )
-        return
-
-    # সাবস্ক্রাইবড হলে মূল বাটনগুলো দেখান
+            print(e)
     buttons = [
         [
             InlineKeyboardButton("✪ ꜱᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ ✪", url="https://t.me/Prime_Support_group"),
@@ -200,7 +155,7 @@ async def start(client, message):
         [InlineKeyboardButton("〄 ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ 〄", url="https://t.me/PrimeXBots")],
         [
             InlineKeyboardButton("〆 ʜᴇʟᴘ 〆", callback_data="help_cmd"),
-            InlineKeyboardButton("〆 ᴀʙᴏᴜᴛ 〆", callback_data="about_cmd")
+            InlineKeyboardButton("〆 ᴀʙᴏᴜᴛ 〆", callback_data="source_prime")
         ],
         [InlineKeyboardButton("✧ ᴄʀᴇᴀᴛᴏʀ ✧", url="https://t.me/Prime_Nayem")]
     ]
@@ -216,6 +171,31 @@ async def start(client, message):
         reply_markup=InlineKeyboardMarkup(buttons)
         )
 
+#about_cmd
+@Client.on_callback_query(filters.regex("source_prime"))
+async def source_info_callback(client, callback_query):
+    try:
+        await callback_query.message.reply_photo(
+            photo="https://i.postimg.cc/hvFZ93Ct/file-000000004188623081269b2440872960.png",
+            caption=(
+                f"<b>👋 Hello {callback_query.from_user.mention},\n\n"
+                "ɴᴏᴛᴇ :\n"
+                "⚠️ ᴛʜɪꜱ ʙᴏᴛ ɪꜱ ᴀɴ ᴘʀɪᴠᴀᴛᴇ ꜱᴏᴜʀᴄᴇ ᴘʀᴏᴊᴇᴄᴛ\n\n"
+                "ᴛʜɪs ʙᴏᴛ ʜᴀs ʟᴀsᴛᴇsᴛ ᴀɴᴅ ᴀᴅᴠᴀɴᴄᴇᴅ ꜰᴇᴀᴛᴜʀᴇs⚡️\n"
+                "▸ ᴅᴏɴ'ᴛ ᴡᴏʀʀʏ\n"
+                "▸ ɪꜰ ʏᴏᴜ ᴡᴀɴᴛ ʟɪᴋᴇ ᴛʜɪꜱ ʙᴏᴛ ᴄᴏɴᴛᴀᴄᴛ ᴍᴇ..!\n"
+                "▸ ɪ ᴡɪʟʟ ᴄʀᴇᴀᴛᴇ ᴀ ʙᴏᴛ ꜰᴏʀ ʏᴏᴜ\n"
+                "⇒ ᴄᴏɴᴛᴀᴄᴛ ᴍᴇ - ♚ ᴀᴅᴍɪɴ ♚.</b>"
+            ),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("♚ ᴀᴅᴍɪɴ ♚", url="https://t.me/Prime_Admin_Support_ProBot")],
+                [InlineKeyboardButton("• ᴄʟᴏsᴇ •", callback_data="close")]
+            ])
+        )
+    except Exception as e:
+        print(e)  # error হলে কনসোলে প্রিন্ট হবে
+    finally:
+        await callback_query.answer()
 
 @app.on_callback_query()
 async def cb_handler(client, query):
@@ -471,16 +451,20 @@ async def broadcast_cmd(client, message):
     await message.reply_text(f"✅ Broadcast sent to {count} users. Failed: {failed}")
 
 # 🟢 Subscription refresh
-@app.on_callback_query(filters.regex("refresh_check"))
-async def refresh_callback(bot, cq: CallbackQuery):
-    subscribed = await is_subscribed(bot, cq.from_user.id, AUTH_CHANNEL)
-    if subscribed:
-        await cq.message.delete()
-        # Optionally, send the start message again
-        await start_handler(bot, cq.message) # Re-trigger start handler
+@Client.on_callback_query(filters.regex("refresh_check"))
+async def refresh_callback(client, query):
+    btn = await get_subscription_buttons(client, query.from_user.id, AUTH_CHANNEL)
+    if not btn:
+        try:
+            await query.message.delete()
+        except:
+            pass
+        await query.message.reply_text("✅ Thank you for joining! Now you can use this bot.")
     else:
-        await cq.answer("❌ You have not joined yet. Please join first, then refresh.", show_alert=True)
-
+        await query.answer(
+            "❌ You haven’t joined our updates channel yet. Please join first and then press Refresh.",
+            show_alert=True
+        )
 
 # ---------- FORWARDER ----------
 @app.on_message(filters.channel)
