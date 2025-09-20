@@ -9,7 +9,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram.enums import ParseMode
 #from pyrogram.errors import UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError, FloodWait, BotBlocked, UserIsBot
 from pyrogram.errors import UserNotParticipant, ChatAdminRequired, PeerIdInvalid, RPCError, FloodWait, UserIsBot
+from os import environ
 
+id_pattern = re.compile(r'^.\d+$')
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -46,7 +48,7 @@ app = Client(
     bot_token=os.environ["BOT_TOKEN"]
 )
 
-AUTH_CHANNEL = int(os.environ.get("AUTH_CHANNEL", "-1002245813234"))
+AUTH_CHANNEL = [int(ch) if id_pattern.search(ch) else ch for ch in environ.get('AUTH_CHANNEL', '-1002245813234').split()] 
 OWNER_ID = 5926160191  # আপনার Owner আইডি
 
 # In-memory store for states
@@ -175,7 +177,7 @@ async def start(client, message):
         photo="https://i.postimg.cc/fLkdDgs2/file-00000000346461fab560bc2d21951e7f.png",
         caption=(
             f"👋 Hello {message.from_user.mention},\n\n"
-            "Welcome To This Bot !\nThis bot can automatically forward New posts from one channel to another Channel/group\n\n"
+            "Welcome To This Bot !\nThis bot can Automatically Forward New posts from one channel to another Channel/group\n\n"
             "⊰•─•─✦✗✦─•◈•─✦✗✦─•─•⊱\n"
             "⚡ Use the buttons below to navigate and get started!"
         ),
@@ -288,17 +290,20 @@ async def cb_handler(client, query):
         await query.message.edit_text("✅ Source removed.", parse_mode=ParseMode.HTML)
 
 #about_cmd
-@Client.on_callback_query(filters.regex("source_prime"))
+
+@Client.on_callback_query(filters.regex("^source_prime$"))
 async def source_info_callback(client, callback_query):
     try:
-        await callback_query.message.reply_photo(
+        # চাইলে আগের মেসেজ ডিলিট করতে পারেন
+        # await callback_query.message.delete()
+
+        await client.send_photo(           # reply_photo না নিয়ে send_photo নিলাম
+            chat_id=callback_query.message.chat.id,
             photo="https://i.postimg.cc/hvFZ93Ct/file-000000004188623081269b2440872960.png",
             caption=(
-                f"<b>👋 Hello Dear 👋,\n\n"
-                "ɴᴏᴛᴇ :\n"
-                "⚠️ ᴛʜɪꜱ ʙᴏᴛ ɪꜱ ᴀɴ ᴘʀɪᴠᴀᴛᴇ ꜱᴏᴜʀᴄᴇ ᴘʀᴏᴊᴇᴄᴛ\n\n"
+                "<b>👋 Hello Dear 👋,\n\n"
+                "⚠️ ᴛʜɪꜱ ʙᴏᴛ ɪꜱ ᴀ ᴘʀɪᴠᴀᴛᴇ ꜱᴏᴜʀᴄᴇ ᴘʀᴏᴊᴇᴄᴛ\n\n"
                 "ᴛʜɪs ʙᴏᴛ ʜᴀs ʟᴀsᴛᴇsᴛ ᴀɴᴅ ᴀᴅᴠᴀɴᴄᴇᴅ ꜰᴇᴀᴛᴜʀᴇs⚡️\n"
-                "▸ ᴅᴏɴ'ᴛ ᴡᴏʀʀʏ\n"
                 "▸ ɪꜰ ʏᴏᴜ ᴡᴀɴᴛ ʟɪᴋᴇ ᴛʜɪꜱ ʙᴏᴛ ᴄᴏɴᴛᴀᴄᴛ ᴍᴇ..!\n"
                 "▸ ɪ ᴡɪʟʟ ᴄʀᴇᴀᴛᴇ ᴀ ʙᴏᴛ ꜰᴏʀ ʏᴏᴜ\n"
                 "⇒ ᴄᴏɴᴛᴀᴄᴛ ᴍᴇ - ♚ ᴀᴅᴍɪɴ ♚.</b>"
@@ -309,9 +314,10 @@ async def source_info_callback(client, callback_query):
             ])
         )
     except Exception as e:
-        print(e)  # error হলে কনসোলে প্রিন্ট হবে
+        print(e)
     finally:
         await callback_query.answer()
+        
 # ---------- SET SOURCE / DESTINY ----------
 @app.on_message(filters.command("set_source") & filters.private)
 async def set_source(client, message):
